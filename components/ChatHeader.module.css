@@ -1,0 +1,49 @@
+.chatHeaderTop {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-bottom: 1px solid #f0f0f0;
+  padding: 16px 24px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: left 0.3s ease;
+}
+
+@media (max-width: 768px) {
+  .chatHeaderTop {
+    padding: 12px 16px;
+  }
+}
+
+@media (min-width: 769px) {
+  .chatHeaderTop {
+    padding: 16px 40px;
+  }
+}
+
+.chatHeaderInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chatTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.chatSubtitle {
+  font-size: 13px;
+  font-weight: 400;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.3;
+}
+

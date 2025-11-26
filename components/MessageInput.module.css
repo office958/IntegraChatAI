@@ -1,0 +1,201 @@
+.chatInputWrapper {
+  padding: 20px;
+  background: #ffffff;
+  border-top: 1px solid #f0f0f0;
+  max-width: 850px;
+  width: 100%;
+  margin: 0 auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .chatInputWrapper {
+    padding: 16px;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .chatInputWrapper {
+    max-width: 750px;
+    padding: 20px 24px;
+  }
+}
+
+@media (min-width: 1025px) {
+  .chatInputWrapper {
+    max-width: 850px;
+    padding: 24px 40px;
+  }
+}
+
+.inputWrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 24px;
+  transition: all 0.3s ease;
+  min-height: 56px;
+  padding: 8px 12px;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  max-width: 100%;
+  width: 100%;
+  order: 2;
+}
+
+.inputWrapper:focus-within {
+  border-color: var(--primary-color);
+  background: white;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.inputWrapper:hover {
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.inputFilesPreview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  width: 100%;
+  justify-content: flex-start;
+  align-items: flex-start;
+  order: 1;
+}
+
+.inputFilesPreview:empty {
+  display: none;
+}
+
+.inputFileItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  font-size: 13px;
+  color: #374151;
+  max-width: 250px;
+  transition: all 0.2s ease;
+  margin: 0;
+}
+
+.inputFileItem:hover {
+  border-color: var(--primary-color);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.inputFileItem svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: #6b7280;
+}
+
+.inputFileItem span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.inputFileRemove {
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.inputFileRemove:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.chatInput {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  outline: none;
+  color: #1f2937;
+  min-width: 0;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.chatInput::placeholder {
+  color: #9ca3af;
+}
+
+.attachBtn,
+.micBtn,
+.sendBtn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.attachBtn:hover,
+.micBtn:hover,
+.sendBtn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.micBtn.listening {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(220, 38, 38, 0.1));
+  color: #ef4444;
+  animation: pulse-mic 1.5s infinite;
+}
+
+@keyframes pulse-mic {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+.sendBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+

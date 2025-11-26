@@ -1,0 +1,153 @@
+.accountMenuContainer {
+  position: relative;
+  margin-left: auto;
+}
+
+.accountButton {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid #e5e7eb;
+  background: white;
+  color: #1f2937;
+  font-weight: 600;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.accountButton:hover {
+  border-color: #16549e;
+  background-color: #f9fafb;
+}
+
+.accountButton:active {
+  transform: scale(0.95);
+}
+
+.accountInitial {
+  user-select: none;
+}
+
+.menuDropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  min-width: 240px;
+  z-index: 1000;
+  overflow: hidden;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.menuHeader {
+  padding: 16px;
+  background: white;
+}
+
+.menuUserInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.menuUserInitial {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid #e5e7eb;
+  background: white;
+  color: #1f2937;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.menuUserName {
+  font-weight: 500;
+  font-size: 15px;
+  color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuDivider {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 4px 0;
+}
+
+.menuItems {
+  padding: 8px 0;
+}
+
+.menuItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  color: #1f2937;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+  outline: none;
+}
+
+.menuItem:hover {
+  background-color: #f3f4f6;
+}
+
+.menuItem:active {
+  background-color: #e5e7eb;
+}
+
+.menuItem svg {
+  flex-shrink: 0;
+  color: #6b7280;
+}
+
+.menuItem:hover svg {
+  color: #16549e;
+}
+
+.menuItemDanger {
+  color: #dc2626;
+}
+
+.menuItemDanger:hover {
+  background-color: #fef2f2;
+}
+
+.menuItemDanger svg {
+  color: #dc2626;
+}
+
+.menuItemDanger:hover svg {
+  color: #dc2626;
+}
+

@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Formular Rezervări - Administrare</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f5f5f5;
+            min-height: 100vh;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- CHAT BUTTON + IFRAME -->
+    <div id="chat-bubble" style="
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 60px;
+        height: 60px;
+        background-color: #4A3AFF;
+        border-radius: 50%;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+        cursor: pointer;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+    ">
+        <img src="https://cdn-icons-png.flaticon.com/512/4712/4712101.png" 
+            style="width: 60%; height: 60%; object-fit: contain;">
+    </div>
+
+    <iframe id="chat-frame"
+    src="http://127.0.0.1:3000/chat/asistent-virtual-pentru-administrare-ce4805c7"
+    style="
+        display: none;
+        position: fixed;
+        bottom: 90px;
+        right: 20px;
+        width: 800px;
+        height: 680px;
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        z-index: 9999;
+        background: transparent;
+    "
+    allowtransparency="true"
+    allow="microphone">
+    </iframe>
+
+    <script>
+    const bubble = document.getElementById('chat-bubble');
+    const frame = document.getElementById('chat-frame');
+    let open = false;
+    let chatColor = '#4A3AFF'; // Default color
+
+    // Extract chat_id from iframe src
+    const iframeSrc = frame.getAttribute('src');
+    const chatIdMatch = iframeSrc.match(/\/chat\/([^\/]+)/);
+    if (chatIdMatch) {
+        const chatId = chatIdMatch[1];
+        // Load chat color from config
+        fetch(`http://127.0.0.1:3000/chat/${chatId}/config`)
+            .then(response => response.json())
+            .then(config => {
+                if (config.chat_color) {
+                    chatColor = config.chat_color;
+                    bubble.style.backgroundColor = chatColor;
+                    // Calculate darker color for hover/active state
+                    function hexToRgb(hex) {
+                        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                        return result ? {
+                            r: parseInt(result[1], 16),
+                            g: parseInt(result[2], 16),
+                            b: parseInt(result[3], 16)
+                        } : null;
+                    }
+                    function darkenColor(hex, percent) {
+                        const rgb = hexToRgb(hex);
+                        if (!rgb) return hex;
+                        const factor = 1 - (percent / 100);
+                        return `rgb(${Math.round(rgb.r * factor)}, ${Math.round(rgb.g * factor)}, ${Math.round(rgb.b * factor)})`;
+                    }
+                    const darkerColor = darkenColor(chatColor, 15);
+                    bubble.addEventListener('mouseenter', () => {
+                        if (!open) bubble.style.backgroundColor = darkerColor;
+                    });
+                    bubble.addEventListener('mouseleave', () => {
+                        if (!open) bubble.style.backgroundColor = chatColor;
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error loading chat config:', error);
+            });
+    }
+
+    bubble.addEventListener('click', () => {
+        open = !open;
+        frame.style.display = open ? 'block' : 'none';
+        bubble.style.transform = open ? 'rotate(360deg)' : 'rotate(0deg)';
+        // Use darker color when open
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+        function darkenColor(hex, percent) {
+            const rgb = hexToRgb(hex);
+            if (!rgb) return hex;
+            const factor = 1 - (percent / 100);
+            return `rgb(${Math.round(rgb.r * factor)}, ${Math.round(rgb.g * factor)}, ${Math.round(rgb.b * factor)})`;
+        }
+        const darkerColor = darkenColor(chatColor, 15);
+        bubble.style.backgroundColor = open ? darkerColor : chatColor;
+    });
+    </script>
+        
+    <!-- LAYOUT PRINCIPAL -->
+    <div class="container mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">📋 Formular Rezervări</h1>
+            <p class="text-gray-600">Completează manual sau cere ajutor AI-ului!</p>
+        </div>
+
+        <!-- FORMULARUL -->
+        <div class="w-full bg-white p-6 md:p-8 rounded-xl shadow-lg border border-gray-200">
+            <form id="reservationForm" class="space-y-6">
+                <!-- Grid cu două coloane -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <!-- COLOANA STÂNGA -->
+                    <div class="space-y-4">
+                        <!-- Selectează numărul rezervat -->
+                        <div>
+                            <label for="numar_rezervat" class="block text-sm font-medium text-gray-700 mb-2">
+                                Selectează numărul rezervat
+                            </label>
+                            <select id="numar_rezervat" name="numar_rezervat"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm bg-white">
+                                <option value="" disabled selected>Alege un număr rezervat</option>
+                                <option value="001">001</option>
+                                <option value="002">002</option>
+                                <option value="003">003</option>
+                                <option value="004">004</option>
+                                <option value="005">005</option>
+                                <option value="010">010</option>
+                                <option value="015">015</option>
+                                <option value="020">020</option>
+                                <option value="025">025</option>
+                                <option value="030">030</option>
+                            </select>
+                        </div>
+
+                        <!-- Denumirea unității -->
+                        <div>
+                            <label for="denumire_unitate" class="block text-sm font-medium text-gray-700 mb-2">
+                                Denumirea unității
+                            </label>
+                            <input type="text" id="denumire_unitate" name="denumire_unitate"
+                                    placeholder="Ex: Primăria Municipiului"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+                        <div>
+                            <label for="cui_cif" class="block text-sm font-medium text-gray-700 mb-2">
+                               CUI/CIF
+                            </label>
+                            <input type="text" id="cui_cif" name="cui_cif"
+                                    placeholder="Ex: 252522"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+                        <div>
+                            <label for="cod_caen" class="block text-sm font-medium text-gray-700 mb-2">
+                               Cod CAEN
+                            </label>
+                            <input type="text" id="cod_caen" name="cod_caen"
+                                    placeholder="Ex: 521642"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+
+                        <!-- Denumirea obiectivului -->
+                        <div>
+                            <label for="denumire_obiectiv" class="block text-sm font-medium text-gray-700 mb-2">
+                                Denumirea obiectivului
+                            </label>
+                            <input type="text" id="denumire_obiectiv" name="denumire_obiectiv"
+                                    placeholder="Ex: Sala de Consiliu"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+
+                        <!-- Repartiție -->
+                        <div>
+                            <label for="repartitie" class="block text-sm font-medium text-gray-700 mb-2">
+                                Repartiţie
+                            </label>
+                            <input type="text" id="repartitie" name="repartitie"
+                                    placeholder="Ex: Serviciul Administrativ"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+
+                        <!-- Solicitare -->
+                        <div>
+                            <label for="solicitare" class="block text-sm font-medium text-gray-700 mb-2">
+                                Solicitare
+                            </label>
+                            <input type="text" id="solicitare" name="solicitare"
+                                    placeholder="Ex: Rezervare pentru ședință"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+
+                        <!-- Observații -->
+                        <div>
+                            <label for="observatii" class="block text-sm font-medium text-gray-700 mb-2">
+                                Observaţii
+                            </label>
+                            <textarea id="observatii" name="observatii" rows="3"
+                                    placeholder="Adaugă observații sau note..."
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm resize-none"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- COLOANA DREAPTA -->
+                    <div class="space-y-4">
+                        <!-- Data Înregistrării -->
+                        <div>
+                            <label for="data_inregistrarii" class="block text-sm font-medium text-gray-700 mb-2">
+                                Data Înregistrării
+                            </label>
+                            <input type="date" id="data_inregistrarii" name="data_inregistrarii"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+
+                        <!-- Prin -->
+                        <div>
+                            <label for="prin" class="block text-sm font-medium text-gray-700 mb-2">
+                               Prin
+                            </label>
+                            <input type="text" id="prin" name="prin"
+                                    placeholder="Ex: Secretar General"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+                        <div>
+                            <label for="prin" class="block text-sm font-medium text-gray-700 mb-2">
+                                Reprezentant legal
+                            </label>
+                            <input type="text" id="reprezentant_legal" name="reprezentant_legal"
+                                    placeholder="Ex: Giseu"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+                        <div>
+                            <label for="prin" class="block text-sm font-medium text-gray-700 mb-2">
+                                CNP
+                            </label>
+                            <input type="text" id="cnp" name="cnp"
+                                    placeholder="Ex: 1910916414451"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+
+                        <!-- Adresa obiectivului -->
+                        <div>
+                            <label for="adresa_obiectiv" class="block text-sm font-medium text-gray-700 mb-2">
+                                Adresa obiectivului
+                            </label>
+                            <input type="text" id="adresa_obiectiv" name="adresa_obiectiv"
+                                    placeholder="Ex: Strada Principală nr. 1"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+
+                        <!-- Chitanță -->
+                        <div>
+                            <label for="chitanta" class="block text-sm font-medium text-gray-700 mb-2">
+                                Chitanță
+                            </label>
+                            <input type="text" id="chitanta" name="chitanta"
+                                    placeholder="Ex: CH-2024-001"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+
+                        <!-- Rezolvare -->
+                        <div>
+                            <label for="rezolvare" class="block text-sm font-medium text-gray-700 mb-2">
+                                Rezolvare
+                            </label>
+                            <input type="text" id="rezolvare" name="rezolvare"
+                                    placeholder="Ex: Aprobat / Respins / În așteptare"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+
+                        <!-- Data Ridicării -->
+                        <div>
+                            <label for="data_ridicarii" class="block text-sm font-medium text-gray-700 mb-2">
+                                Data Ridicării
+                            </label>
+                            <input type="date" id="data_ridicarii" name="data_ridicarii"
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Buton Submit -->
+                <div id="statusMessage" class="hidden p-3 rounded-lg text-sm font-medium text-center"></div>
+
+                <div class="flex justify-end mt-6">
+                    <button type="submit"
+                            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-lg transition duration-200 ease-in-out transform hover:scale-[1.02] shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                        Salvează
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Instrucțiuni -->
+        <div class="mt-6 bg-blue-50 border border-blue-200 p-4 rounded-lg">
+            <p class="text-sm text-gray-700 text-center">
+                💡 <strong>Sfat:</strong> Click pe iconița de chat din colțul dreapta jos și spune-i AI-ului: 
+                <em>"Completează formularul cu o rezervare pentru..."</em> sau <em>"Creează o rezervare pentru sala de consiliu"</em>
+            </p>
+        </div>
+    </div>
+
+    <!-- SCRIPT UNIVERSAL DE AUTO-COMPLETARE -->
+    <script src="http://127.0.0.1:3000/scripts/integra_autofill.js"></script>
+
+    <!-- Script pentru formular -->
+    <script>
+        document.getElementById('reservationForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            
+            console.log('📋 Date formular rezervare:', data);
+            
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.className = 'p-3 rounded-lg text-sm font-medium text-center bg-green-100 text-green-800';
+            statusDiv.textContent = '✅ Rezervare salvată cu succes! (Demo - datele nu sunt trimise la server)';
+            statusDiv.classList.remove('hidden');
+            
+            setTimeout(() => {
+                statusDiv.classList.add('hidden');
+            }, 5000);
+        });
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with Integra</title>
+    <link rel="stylesheet" href="/style/chat.css">
+    <style>
+        :root {
+            --primary-color: #3b82f6;
+            --primary-color-dark: #2563eb;
+            --primary-color-light: #60a5fa;
+        }
+    </style>
+</head>
+<body>
+    <div id="chatContainer" class="chat-container">
+        <!-- Chat Header -->
+        <div class="chat-header-top">
+            <div class="chat-header-info">
+                <h1 id="chatTitle" class="chat-title">Chat with Integra</h1>
+                <p id="chatSubtitle" class="chat-subtitle">Asistentul tău inteligent pentru găsirea informațiilor</p>
+            </div>
+        </div>
+
+        <!-- Chat Messages -->
+        <div id="chatMessages" class="chat-messages">
+        </div>
+
+        <!-- Input Area -->
+        <div class="chat-input-wrapper">
+            <!-- File Preview in Input -->
+            <div id="inputFilesPreview" class="input-files-preview"></div>
+            
+            <div class="input-wrapper">
+                <button type="button" id="attachBtn" class="attach-btn" title="Atașează fișiere">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                
+                <input 
+                    type="text" 
+                    id="messageInput" 
+                    class="chat-input" 
+                    placeholder="Scrie un mesaj..."
+                    autocomplete="off"
+                />
+                
+                <button type="button" id="micBtn" class="mic-btn" title="Vorbește (Speech to Text)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 1C10.34 1 9 2.34 9 4V12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12V4C15 2.34 13.66 1 12 1Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <path d="M19 10V12C19 16.42 15.42 20 11 20H13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <path d="M12 19V23" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <path d="M8 23H16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                    </svg>
+                </button>
+                
+                <button type="button" id="waveformBtn" class="waveform-icon" title="Waveform" style="display: none;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 9V15H5V9H3ZM7 5V19H9V5H7ZM11 9V15H13V9H11ZM15 3V21H17V3H15ZM19 7V17H21V7H19Z" fill="currentColor"/>
+                    </svg>
+                </button>
+                
+                <button type="button" id="sendBtn" class="send-btn" title="Trimite mesajul">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="currentColor"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Popup -->
+    <div id="uploadPopup" class="upload-popup">
+        <div class="upload-popup-content">
+            <div class="upload-popup-header">
+                <h3>Încarcă fișiere</h3>
+                <button type="button" id="uploadPopupClose" class="upload-popup-close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z" fill="currentColor"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="upload-popup-body">
+                <input 
+                    type="file" 
+                    id="pdfInput" 
+                    multiple 
+                    accept=".pdf,.png,.jpg,.jpeg,.txt,.md,.doc,.docx"
+                    style="display: none;"
+                />
+                <button type="button" id="uploadPopupBtn" class="upload-popup-btn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4C9.11 4 6.6 5.64 5.35 8.04C2.34 8.36 0 10.91 0 14C0 17.31 2.69 20 6 20H19C21.76 20 24 17.76 24 15C24 12.36 21.95 10.22 19.35 10.04ZM14 13V17H10V13H7L12 8L17 13H14Z" fill="currentColor"/>
+                    </svg>
+                    <span>Încarcă fișiere</span>
+                </button>
+                <div id="pdfFilesList" class="pdf-files-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Helper functions - defined globally
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+        
+        function darkenColor(hex, percent) {
+            const rgb = hexToRgb(hex);
+            if (!rgb) return hex;
+            const factor = 1 - (percent / 100);
+            return `rgb(${Math.round(rgb.r * factor)}, ${Math.round(rgb.g * factor)}, ${Math.round(rgb.b * factor)})`;
+        }
+        
+        function lightenColor(hex, percent) {
+            const rgb = hexToRgb(hex);
+            if (!rgb) return hex;
+            const factor = percent / 100;
+            return `rgb(${Math.min(255, Math.round(rgb.r + (255 - rgb.r) * factor))}, ${Math.min(255, Math.round(rgb.g + (255 - rgb.g) * factor))}, ${Math.min(255, Math.round(rgb.b + (255 - rgb.b) * factor))})`;
+        }
+        
+        function hexToRgba(hex, alpha) {
+            const rgb = hexToRgb(hex);
+            if (!rgb) return hex;
+            return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+        }
+        
+        function applyColor(color) {
+            const root = document.documentElement;
+            root.style.setProperty('--primary-color', color);
+            root.style.setProperty('--primary-color-dark', darkenColor(color, 15));
+            root.style.setProperty('--primary-color-light', lightenColor(color, 15));
+            root.style.setProperty('--primary-color-10', hexToRgba(color, 0.1));
+            root.style.setProperty('--primary-color-20', hexToRgba(color, 0.2));
+            root.style.setProperty('--primary-color-25', hexToRgba(color, 0.25));
+            root.style.setProperty('--primary-color-35', hexToRgba(color, 0.35));
+            
+            // Force reflow
+            void root.offsetHeight;
+            
+            console.log('✅ Culoare aplicată:', color);
+            console.log('🎨 Verificare:', getComputedStyle(root).getPropertyValue('--primary-color'));
+        }
+        
+        // Load dynamic chat configuration - RUN IMMEDIATELY
+        (async function() {
+            const pathParts = window.location.pathname.split('/').filter(p => p);
+            let chatId = null;
+            
+            if (pathParts.length >= 2 && pathParts[0] === 'chat') {
+                chatId = pathParts[1];
+            }
+            
+            console.log('🔍 Chat ID:', chatId);
+            
+            if (chatId) {
+                try {
+                    const response = await fetch(`/chat/${chatId}/config`);
+                    console.log('📡 Status:', response.status);
+                    if (response.ok) {
+                        const config = await response.json();
+                        console.log('📋 Config:', config);
+                        console.log('🎨 Culoare:', config.chat_color);
+                        
+                        document.title = config.chat_title || "Chat with Integra";
+                        
+                        // Update header text
+                        const updateHeader = () => {
+                            const chatTitle = document.getElementById('chatTitle');
+                            const chatSubtitle = document.getElementById('chatSubtitle');
+                            if (chatTitle) chatTitle.textContent = config.chat_title || config.name || "Chat with Integra";
+                            if (chatSubtitle) chatSubtitle.textContent = config.chat_subtitle || "Asistentul tău inteligent pentru găsirea informațiilor";
+                        };
+                        
+                        if (document.readyState === 'loading') {
+                            document.addEventListener('DOMContentLoaded', updateHeader);
+                        } else {
+                            updateHeader();
+                        }
+                        
+                        // Apply color IMMEDIATELY
+                        if (config.chat_color) {
+                            applyColor(config.chat_color);
+                        }
+                    } else {
+                        console.error('❌ Failed to load config:', response.statusText);
+                    }
+                } catch (error) {
+                    console.error('❌ Error:', error);
+                }
+            } else {
+                console.log('ℹ️ No chat_id, using default colors');
+            }
+        })();
+    </script>
+    <script src="/scripts/chat.js"></script>
+</body>
+</html>

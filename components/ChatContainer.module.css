@@ -1,0 +1,70 @@
+.chatContainer {
+  width: 100%;
+  min-height: 100vh;
+  background: #ffffff;
+  display: flex;
+  position: relative;
+  align-items: flex-start;
+}
+
+.chatContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  transition: margin-left 0.3s ease;
+  width: 100%;
+  position: relative;
+}
+
+.chatContentWithSidebar {
+  margin-left: 0;
+  width: 100%;
+}
+
+@media (min-width: 769px) {
+  .chatContentWithSidebar {
+    margin-left: 0;
+    width: calc(100% - 280px);
+  }
+}
+
+@media (max-width: 768px) {
+  .chatContainer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .chatContent {
+    margin-left: 0;
+    width: 100%;
+  }
+  
+  .chatContentWithSidebar {
+    margin-left: 0;
+  }
+}
+
+.chatContentWrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: visible;
+  position: relative;
+}
+
+.loadingContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.loadingSpinner {
+  font-size: 18px;
+  color: #6b7280;
+}
+

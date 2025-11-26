@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Formular Evenimente - Administrare</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- CHAT BUTTON + IFRAME -->
+    <div id="chat-bubble" style="
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    background-color: #4A3AFF;
+    border-radius: 50%;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    cursor: pointer;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    ">
+    <img src="https://cdn-icons-png.flaticon.com/512/4712/4712101.png" 
+        style="width: 60%; height: 60%; object-fit: contain;">
+    </div>
+
+    <iframe id="chat-frame"
+    src="http://127.0.0.1:3000/chat/chat-event-08cc6890"
+    style="
+        display: none;
+        position: fixed;
+        bottom: 90px;
+        right: 20px;
+        width: 800px;
+        height: 680px;
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        z-index: 9999;
+        background: transparent;
+    "
+    allowtransparency="true"
+    allow="microphone">
+    </iframe>
+
+    <script>
+    const bubble = document.getElementById('chat-bubble');
+    const frame = document.getElementById('chat-frame');
+    let open = false;
+    let chatColor = '#4A3AFF'; // Default color
+
+    // Extract chat_id from iframe src
+    const iframeSrc = frame.getAttribute('src');
+    const chatIdMatch = iframeSrc.match(/\/chat\/([^\/]+)/);
+    if (chatIdMatch) {
+        const chatId = chatIdMatch[1];
+        // Load chat color from config
+        fetch(`http://127.0.0.1:3000/chat/${chatId}/config`)
+            .then(response => response.json())
+            .then(config => {
+                if (config.chat_color) {
+                    chatColor = config.chat_color;
+                    bubble.style.backgroundColor = chatColor;
+                    // Calculate darker color for hover/active state
+                    function hexToRgb(hex) {
+                        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                        return result ? {
+                            r: parseInt(result[1], 16),
+                            g: parseInt(result[2], 16),
+                            b: parseInt(result[3], 16)
+                        } : null;
+                    }
+                    function darkenColor(hex, percent) {
+                        const rgb = hexToRgb(hex);
+                        if (!rgb) return hex;
+                        const factor = 1 - (percent / 100);
+                        return `rgb(${Math.round(rgb.r * factor)}, ${Math.round(rgb.g * factor)}, ${Math.round(rgb.b * factor)})`;
+                    }
+                    const darkerColor = darkenColor(chatColor, 15);
+                    bubble.addEventListener('mouseenter', () => {
+                        if (!open) bubble.style.backgroundColor = darkerColor;
+                    });
+                    bubble.addEventListener('mouseleave', () => {
+                        if (!open) bubble.style.backgroundColor = chatColor;
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error loading chat config:', error);
+            });
+    }
+
+    bubble.addEventListener('click', () => {
+        open = !open;
+        frame.style.display = open ? 'block' : 'none';
+        bubble.style.transform = open ? 'rotate(360deg)' : 'rotate(0deg)';
+        // Use darker color when open
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+        function darkenColor(hex, percent) {
+            const rgb = hexToRgb(hex);
+            if (!rgb) return hex;
+            const factor = 1 - (percent / 100);
+            return `rgb(${Math.round(rgb.r * factor)}, ${Math.round(rgb.g * factor)}, ${Math.round(rgb.b * factor)})`;
+        }
+        const darkerColor = darkenColor(chatColor, 15);
+        bubble.style.backgroundColor = open ? darkerColor : chatColor;
+    });
+    </script>
+    
+        
+    <!-- LAYOUT PRINCIPAL -->
+    <div class="container mx-auto max-w-4xl p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-white mb-2">📅 Formular Evenimente</h1>
+            <p class="text-white/90 text-lg">Completează manual sau cere ajutor AI-ului!</p>
+        </div>
+
+        <!-- FORMULARUL -->
+        <div class="w-full bg-white p-6 md:p-8 rounded-xl shadow-2xl border border-gray-100">
+            <form id="eventForm" class="space-y-6">
+                <!-- Nume Eveniment -->
+                <div>
+                    <label for="nume_eveniment" class="block text-sm font-semibold text-gray-700 mb-2">
+                        Nume Eveniment <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="nume_eveniment" name="nume_eveniment" required
+                            placeholder="Ex: Festival de Muzică Rock"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm">
+                </div>
+
+                <!-- Tip Eveniment -->
+                <div>
+                    <label for="tip_eveniment" class="block text-sm font-semibold text-gray-700 mb-2">
+                        Tip Eveniment <span class="text-red-500">*</span>
+                    </label>
+                    <select id="tip_eveniment" name="tip_eveniment" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm bg-white">
+                        <option value="" disabled selected>Selectează tipul evenimentului</option>
+                        <option value="conferinta">Conferință</option>
+                        <option value="workshop">Workshop</option>
+                        <option value="concert">Concert</option>
+                        <option value="expozitie">Expoziție</option>
+                        <option value="festival">Festival</option>
+                        <option value="sportiv">Eveniment Sportiv</option>
+                        <option value="cultural">Eveniment Cultural</option>
+                        <option value="altul">Altul</option>
+                    </select>
+                </div>
+
+                <!-- Data și Ora -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="data_eveniment" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Data Eveniment <span class="text-red-500">*</span>
+                        </label>
+                        <input type="date" id="data_eveniment" name="data_eveniment" required
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm">
+                    </div>
+
+                    <div>
+                        <label for="ora_incepere" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Ora Începere <span class="text-red-500">*</span>
+                        </label>
+                        <input type="time" id="ora_incepere" name="ora_incepere" required
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm">
+                    </div>
+                </div>
+
+                <!-- Locație -->
+                <div>
+                    <label for="locatie" class="block text-sm font-semibold text-gray-700 mb-2">
+                        Locație <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" id="locatie" name="locatie" required
+                            placeholder="Ex: Sala Polivalentă, Strada Principală nr. 10"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm">
+                </div>
+
+                <!-- Oraș -->
+                <div>
+                    <label for="oras" class="block text-sm font-semibold text-gray-700 mb-2">
+                        Oraș <span class="text-red-500">*</span>
+                    </label>
+                    <select id="oras" name="oras" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm bg-white">
+                        <option value="" disabled selected>Selectează orașul</option>
+                        <option value="bucuresti">București</option>
+                        <option value="cluj">Cluj-Napoca</option>
+                        <option value="timisoara">Timișoara</option>
+                        <option value="iasi">Iași</option>
+                        <option value="constanta">Constanța</option>
+                        <option value="brasov">Brașov</option>
+                        <option value="craiova">Craiova</option>
+                        <option value="galati">Galați</option>
+                    </select>
+                </div>
+
+                <!-- Preț -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="pret_bilet" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Preț Bilet (RON)
+                        </label>
+                        <input type="number" id="pret_bilet" name="pret_bilet" min="0" step="0.01"
+                                placeholder="0.00"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm">
+                    </div>
+
+                    <div>
+                        <label for="numar_locuri" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Număr Locuri Disponibile
+                        </label>
+                        <input type="number" id="numar_locuri" name="numar_locuri" min="1"
+                                placeholder="100"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm">
+                    </div>
+                </div>
+
+                <!-- Organizator -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="nume_organizator" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Nume Organizator <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="nume_organizator" name="nume_organizator" required
+                                placeholder="Ex: Asociația Culturală Locală"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm">
+                    </div>
+
+                    <div>
+                        <label for="email_contact" class="block text-sm font-semibold text-gray-700 mb-2">
+                            Email Contact <span class="text-red-500">*</span>
+                        </label>
+                        <input type="email" id="email_contact" name="email_contact" required
+                                placeholder="contact@eveniment.ro"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm">
+                    </div>
+                </div>
+
+                <!-- Telefon -->
+                <div>
+                    <label for="telefon_contact" class="block text-sm font-semibold text-gray-700 mb-2">
+                        Telefon Contact
+                    </label>
+                    <input type="tel" id="telefon_contact" name="telefon_contact"
+                            placeholder="+40 123 456 789"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm">
+                </div>
+
+                <!-- Descriere -->
+                <div>
+                    <label for="descriere" class="block text-sm font-semibold text-gray-700 mb-2">
+                        Descriere Eveniment <span class="text-red-500">*</span>
+                    </label>
+                    <textarea id="descriere" name="descriere" rows="6" required
+                            placeholder="Descrie evenimentul în detaliu..."
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm resize-none"></textarea>
+                </div>
+
+                <!-- Opțiuni -->
+                <div class="space-y-3">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Opțiuni Eveniment</label>
+                    
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="acces_persoane_cu_dizabilitati" name="acces_persoane_cu_dizabilitati" value="da">
+                        <label for="acces_persoane_cu_dizabilitati" class="text-sm text-gray-700">
+                            Acces pentru persoane cu dizabilități
+                        </label>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="parcare_disponibila" name="parcare_disponibila" value="da">
+                        <label for="parcare_disponibila" class="text-sm text-gray-700">
+                            Parcare disponibilă
+                        </label>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="acces_wifi" name="acces_wifi" value="da">
+                        <label for="acces_wifi" class="text-sm text-gray-700">
+                            Acces WiFi gratuit
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Tip Acces -->
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Tip Acces</label>
+                    <div class="space-y-2">
+                        <div class="flex items-center space-x-2">
+                            <input type="radio" id="acces_gratuit" name="tip_acces" value="gratuit" checked>
+                            <label for="acces_gratuit" class="text-sm text-gray-700">Gratuit</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="radio" id="acces_platit" name="tip_acces" value="platit">
+                            <label for="acces_platit" class="text-sm text-gray-700">Plătit</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="radio" id="acces_invitatie" name="tip_acces" value="invitatie">
+                            <label for="acces_invitatie" class="text-sm text-gray-700">Doar cu invitație</label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Website -->
+                <div>
+                    <label for="website" class="block text-sm font-semibold text-gray-700 mb-2">
+                        Website Eveniment
+                    </label>
+                    <input type="url" id="website" name="website"
+                            placeholder="https://www.eveniment.ro"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition duration-150 shadow-sm">
+                </div>
+
+                <!-- Buton Submit -->
+                <div id="statusMessage" class="hidden p-3 rounded-lg text-sm font-medium text-center"></div>
+
+                <button type="submit"
+                        class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold py-4 rounded-lg transition duration-200 ease-in-out transform hover:scale-[1.01] shadow-lg hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2">
+                    💾 Salvează Evenimentul
+                </button>
+            </form>
+        </div>
+
+        <!-- Instrucțiuni -->
+        <div class="mt-6 bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow-lg">
+            <p class="text-sm text-gray-700 text-center">
+                💡 <strong>Sfat:</strong> Click pe iconița de chat din colțul dreapta jos și spune-i AI-ului: 
+                <em>"Creează un eveniment despre..."</em> sau <em>"Completează formularul cu un eveniment de muzică rock"</em>
+            </p>
+        </div>
+    </div>
+
+    <!-- SCRIPT UNIVERSAL DE AUTO-COMPLETARE -->
+    <script src="http://127.0.0.1:3000/scripts/integra_autofill.js"></script>
+
+    <!-- Script pentru formular -->
+    <script>
+        document.getElementById('eventForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            
+            // Colectează checkbox-urile
+            const checkboxes = ['acces_persoane_cu_dizabilitati', 'parcare_disponibila', 'acces_wifi'];
+            checkboxes.forEach(name => {
+                data[name] = formData.has(name) ? 'da' : 'nu';
+            });
+            
+            console.log('📋 Date formular:', data);
+            
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.className = 'p-3 rounded-lg text-sm font-medium text-center bg-green-100 text-green-800';
+            statusDiv.textContent = '✅ Eveniment salvat cu succes! (Demo - datele nu sunt trimise la server)';
+            statusDiv.classList.remove('hidden');
+            
+            setTimeout(() => {
+                statusDiv.classList.add('hidden');
+            }, 5000);
+        });
+    </script>
+</body>
+</html>
+

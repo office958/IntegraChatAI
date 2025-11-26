@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administrare Articole - Primăria Bârsău</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fc;
+        }
+        .line-clamp-3 {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+<div id="chat-bubble" style="
+position: fixed;
+bottom: 20px;
+right: 20px;
+width: 60px;
+height: 60px;
+background-color: #4A3AFF;
+border-radius: 50%;
+box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+cursor: pointer;
+z-index: 9999;
+display: flex;
+align-items: center;
+justify-content: center;
+transition: all 0.3s ease;
+">
+<img src="https://cdn-icons-png.flaticon.com/512/4712/4712101.png" 
+    style="width: 60%; height: 60%; object-fit: contain;">
+</div>
+
+<iframe id="chat-frame"
+src="http://127.0.0.1:3000/chat/asistentul-virtual-al-primăriei-tășnad-cd22e7ea"
+style="
+    display: none;
+    position: fixed;
+    bottom: 90px;
+    right: 20px;
+    width: 800px;
+    height: 680px;
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    z-index: 9999;
+    background: transparent;
+"
+allowtransparency="true"
+allow="microphone">
+</iframe>
+
+<script>
+const bubble = document.getElementById('chat-bubble');
+const frame = document.getElementById('chat-frame');
+let open = false;
+
+bubble.addEventListener('click', () => {
+    open = !open;
+    frame.style.display = open ? 'block' : 'none';
+    bubble.style.transform = open ? 'rotate(360deg)' : 'rotate(0deg)';
+    bubble.style.backgroundColor = open ? '#362FD9' : '#4A3AFF';
+});
+</script>
+
+
+    
+    
+        
+    <!-- LAYOUT PRINCIPAL -->
+    <div class="container mx-auto max-w-5xl p-4 sm:p-6 lg:p-8">
+
+        <!-- FORMULARUL DE ADAUGARE ARTICOL -->
+        <div class="w-full bg-white p-6 md:p-8 rounded-xl shadow-2xl border border-gray-100 mb-10">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2 text-center">
+                Adaugă Articol Nou
+            </h1>
+            <p class="text-center text-gray-500 mb-6">
+                Completează câmpurile sau cere ajutor chatbot-ului!
+            </p>
+
+            <form id="articleForm" class="space-y-4">
+                <div>
+                    <label for="title" class="block text-sm font-medium text-gray-700 mb-1">Titlu Articol</label>
+                    <input type="text" id="title" name="title" required
+                            placeholder="Ex: Avertizare meteo: caniculă în Bârsău"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                </div>
+                
+
+                <div>
+                    <label for="author" class="block text-sm font-medium text-gray-700 mb-1">Nume Autor</label>
+                    <input type="text" id="author" name="author" required
+                            placeholder="Ex: Antonel Crișan"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm">
+                </div>
+
+                <div>
+                    <label for="category" class="block text-sm font-medium text-gray-700 mb-1">Categorie</label>
+                    <select id="category" name="category" required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm bg-white">
+                        <option value="" disabled selected>Selectează o categorie</option>
+                        <option value="meteo">Meteo</option>
+                        <option value="stiri">Știri</option>
+                        <option value="evenimente">Evenimente</option>
+                        <option value="educatie">Educație</option>
+                        <option value="sanatate">Sănătate</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="content" class="block text-sm font-medium text-gray-700 mb-1">Conținut (Text Integral)</label>
+                    <textarea id="content" name="content" rows="8" required
+                                 placeholder="Introdu textul complet al articolului aici..."
+                                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150 shadow-sm"></textarea>
+                </div>
+
+                <div id="statusMessage" class="hidden p-3 rounded-lg text-sm font-medium text-center"></div>
+
+                <button type="submit"
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition duration-200 ease-in-out transform hover:scale-[1.01] shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Publică Articolul
+                </button>
+            </form>
+        </div>
+
+        <!-- LISTA DE ARTICOLE -->
+        <h2 class="text-2xl font-bold text-gray-800 mt-10 mb-6 border-b pb-2">
+            Articole Publicate
+        </h2>
+        
+        <div id="articlesContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <p id="loadingMessage" class="col-span-full text-center text-gray-500">Se încarcă articolele...</p>
+        </div>
+    </div>
+
+    <!-- SCRIPT UNIVERSAL DE AUTO-COMPLETARE -->
+    <script>
+        /**
+         * Integra AI - Auto-Fill Universal
+         */
+        (function() {
+            'use strict';
+
+            const CONFIG = {
+                debug: true,
+                highlightFields: true,
+                showNotifications: true,
+            };
+
+            function detectFormFields() {
+                const fields = [];
+                const inputs = document.querySelectorAll('input, textarea, select');
+                
+                inputs.forEach(input => {
+                    if (input.type === 'hidden' || input.type === 'submit' || 
+                        input.type === 'button' || input.disabled) {
+                        return;
+                    }
+
+                    const fieldInfo = {
+                        element: input,
+                        id: input.id,
+                        name: input.name,
+                        type: input.type,
+                        label: findLabel(input),
+                        possibleKeys: getPossibleKeys(input)
+                    };
+
+                    fields.push(fieldInfo);
+                });
+
+                return fields;
+            }
+
+            function findLabel(input) {
+                if (input.id) {
+                    const label = document.querySelector(`label[for="${input.id}"]`);
+                    if (label) return label.textContent.trim();
+                }
+
+                const parentLabel = input.closest('label');
+                if (parentLabel) {
+                    return parentLabel.textContent.replace(input.value, '').trim();
+                }
+
+                const previousElement = input.previousElementSibling;
+                if (previousElement && previousElement.tagName === 'LABEL') {
+                    return previousElement.textContent.trim();
+                }
+
+                return null;
+            }
+
+            function getPossibleKeys(input) {
+                const keys = new Set();
+                
+                if (input.id) keys.add(normalizeKey(input.id));
+                if (input.name) keys.add(normalizeKey(input.name));
+                
+                const label = findLabel(input);
+                if (label) keys.add(normalizeKey(label));
+                
+                if (input.placeholder) keys.add(normalizeKey(input.placeholder));
+
+                return Array.from(keys);
+            }
+
+            function normalizeKey(key) {
+                return key.toLowerCase()
+                    .normalize("NFD")
+                    .replace(/[\u0300-\u036f]/g, "")
+                    .replace(/[^a-z0-9]/g, '_')
+                    .replace(/_+/g, '_')
+                    .replace(/^_|_$/g, '');
+            }
+
+            function findBestMatch(dataKey, fields) {
+                const normalizedDataKey = normalizeKey(dataKey);
+                
+                for (const field of fields) {
+                    if (field.possibleKeys.includes(normalizedDataKey)) {
+                        return field;
+                    }
+                }
+
+                for (const field of fields) {
+                    for (const possibleKey of field.possibleKeys) {
+                        if (possibleKey.includes(normalizedDataKey) || 
+                            normalizedDataKey.includes(possibleKey)) {
+                            return field;
+                        }
+                    }
+                }
+
+                return null;
+            }
+
+            function fillField(field, value) {
+                const element = field.element;
+                
+                if (element.tagName === 'SELECT') {
+                    const normalizedValue = normalizeKey(value);
+                    for (const option of element.options) {
+                        const normalizedOption = normalizeKey(option.value || option.text);
+                        if (normalizedOption === normalizedValue || 
+                            normalizedOption.includes(normalizedValue) ||
+                            normalizedValue.includes(normalizedOption)) {
+                            element.value = option.value;
+                            break;
+                        }
+                    }
+                } else {
+                    element.value = value;
+                }
+
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+
+                if (CONFIG.highlightFields) {
+                    highlightField(element);
+                }
+
+                if (CONFIG.debug) {
+                    console.log(`✅ Completat: ${field.label || field.id} = ${value}`);
+                }
+            }
+
+            function highlightField(element) {
+                const originalBorder = element.style.border;
+                const originalBackground = element.style.background;
+                
+                element.style.border = '2px solid #10b981';
+                element.style.background = '#d1fae5';
+                
+                setTimeout(() => {
+                    element.style.border = originalBorder;
+                    element.style.background = originalBackground;
+                }, 2000);
+            }
+
+            function processAutoFillData(data) {
+                if (!data || typeof data !== 'object') return;
+
+                const fields = detectFormFields();
+                let filledCount = 0;
+
+                for (const [key, value] of Object.entries(data)) {
+                    if (!value) continue;
+
+                    const matchedField = findBestMatch(key, fields);
+                    if (matchedField) {
+                        fillField(matchedField, value);
+                        filledCount++;
+                    }
+                }
+
+                if (CONFIG.showNotifications && filledCount > 0) {
+                    showNotification(`✅ ${filledCount} câmp${filledCount > 1 ? 'uri completate' : ' completat'} automat!`);
+                }
+
+                return filledCount;
+            }
+
+            function showNotification(message) {
+                const notification = document.createElement('div');
+                notification.textContent = message;
+                notification.style.cssText = `
+                    position: fixed; top: 20px; right: 20px;
+                    background: linear-gradient(135deg, #10b981, #059669);
+                    color: white; padding: 16px 24px;
+                    border-radius: 12px;
+                    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                    font-size: 14px; font-weight: 600;
+                    z-index: 10000; animation: slideIn 0.3s ease-out;
+                `;
+
+                document.body.appendChild(notification);
+                setTimeout(() => {
+                    notification.style.animation = 'slideIn 0.3s ease-out reverse';
+                    setTimeout(() => notification.remove(), 300);
+                }, 3000);
+            }
+
+            window.addEventListener('message', (event) => {
+                if (event.data && event.data.type === 'autoFillFields') {
+                    processAutoFillData(event.data.payload);
+                }
+            });
+
+            console.log('🤖 Integra AI Auto-Fill activat!');
+        })();
+    </script>
+
+    <!-- REST OF YOUR CODE (Firebase, etc.) -->
+    <script type="module">
+        // Your existing Firebase code here
+        console.log('📄 Pagină încărcată cu suport pentru auto-completare dinamică');
+    </script>
+</body>
+</html>

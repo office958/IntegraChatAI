@@ -1,0 +1,45 @@
+.settingsContainer {
+  display: flex;
+  min-height: 100vh;
+  background: #f9fafb;
+}
+
+.settingsContent {
+  flex: 1;
+  padding: 32px;
+  margin-left: 280px;
+  max-width: calc(100% - 280px);
+}
+
+.placeholderSection {
+  background: white;
+  border-radius: 12px;
+  padding: 48px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.placeholderSection h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 12px;
+}
+
+.placeholderSection p {
+  font-size: 16px;
+  color: #6b7280;
+}
+
+@media (max-width: 768px) {
+  .settingsContainer {
+    flex-direction: column;
+  }
+
+  .settingsContent {
+    margin-left: 0;
+    max-width: 100%;
+    padding: 20px;
+  }
+}
+
