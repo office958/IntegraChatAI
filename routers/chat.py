@@ -15,6 +15,7 @@ from core.cache import get_cached_config, invalidate_config_cache
 from core.conversation import get_tenant_id_from_chat_id, create_default_config
 from core.prompt import enhance_prompt_for_autofill
 from core.config import ollama
+from core.title_generator import generate_chat_title
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -166,6 +167,7 @@ async def ask_dynamic(chat_id: str, request: ChatRequest, current_user: dict = D
     # === STREAM RĂSPUNS CU COLECTARE ===
     # Folosim un wrapper care colectează răspunsul complet
     full_response = ""
+    user_message_for_title = user_message  # Salvează pentru generarea titlului
     
     # Folosește mesajul utilizatorului pentru căutare RAG semantică
     rag_search_query = request.message if request.message else None
@@ -189,6 +191,22 @@ async def ask_dynamic(chat_id: str, request: ChatRequest, current_user: dict = D
         if full_response.strip():
             db_add_message_to_conversation(session_id=session_id, chat_id=chat_id if not session_id else None, role="assistant", content=full_response, user_id=user_id)
             print(f"✅ Răspuns salvat în istoric pentru {chat_id} (session: {session_id}): {len(full_response)} caractere")
+            
+            # Generează titlu automat dacă este prima conversație (doar 2 mesaje: user + assistant)
+            if session_id:
+                session = get_chat_session(session_id)
+                if session and session.get('title') == 'Chat nou':
+                    # Verifică dacă sunt doar 2 mesaje (primul user + primul assistant)
+                    history_after = db_get_conversation_history(chat_id=None, session_id=session_id, user_id=user_id)
+                    if len(history_after) == 2:  # Doar primul mesaj user și primul răspuns assistant
+                        try:
+                            # Generează titlu automat
+                            auto_title = await generate_chat_title(user_message_for_title, full_response)
+                            if auto_title and auto_title != "Chat nou":
+                                db_update_chat_session(session_id, auto_title)
+                                print(f"✅ Titlu generat automat pentru sesiune {session_id}: {auto_title}")
+                        except Exception as e:
+                            print(f"⚠️ Eroare la generarea titlului automat: {e}")
    
     return StreamingResponse(
         stream_with_collection(), 

@@ -427,6 +427,10 @@ def create_chat_session(user_id: int, client_chat_id: int, title: str = None) ->
             connection.commit()
             print(f"✅ User default creat: ID {user_id}")
         
+        # Dacă titlul nu este specificat, folosește "Chat nou"
+        if title is None:
+            title = "Chat nou"
+        
         query = """
             INSERT INTO chat_session (user_id, id_client_chat, title)
             VALUES (%s, %s, %s)

@@ -1,120 +1,90 @@
-# 🤖 Integra AI - Chat Assistant cu Auto-Fill
+# Integra AI - Chatbot Platform
 
-Sistem de chat AI cu suport pentru auto-completare formulare, extragere text din PDF-uri și imagini (OCR).
+Platformă multi-tenant pentru crearea și gestionarea de chatbot-uri inteligente cu suport RAG (Retrieval Augmented Generation).
 
-## 🚀 Pornire Server
+## 🚀 Quick Start
 
-### Metoda 1: FastAPI (Recomandat)
-
-Serverul principal este `main.py` care rulează pe portul **3000**.
-
+### Backend (FastAPI)
 ```bash
-# Instalează dependențele (dacă nu sunt deja instalate)
-pip install fastapi uvicorn ollama PyPDF2 pytesseract pillow
+# Instalează dependențele
+pip install -r requirements.txt
 
 # Pornește serverul
-uvicorn main:app --host 127.0.0.1 --port 3000 --reload
+python main.py
+# sau
+scripts/start-backend.bat
 ```
 
-Sau folosind Python direct:
-
+### Frontend (Next.js)
 ```bash
-python -m uvicorn main:app --host 127.0.0.1 --port 3000 --reload
+# Instalează dependențele
+npm install
+
+# Pornește aplicația
+npm run dev
+# sau
+scripts/start-frontend.bat
 ```
 
-## 📋 Dependențe
+## 📁 Structura Proiectului
 
-### Python
-- `fastapi` - Framework web
-- `uvicorn` - Server ASGI
-- `ollama` - Client pentru Ollama LLM
-- `PyPDF2` - Extragere text din PDF-uri
-- `pytesseract` - OCR pentru imagini
-- `pillow` - Procesare imagini
-
-### Node.js (opțional)
-- `express` - Framework web
-- `cors` - CORS middleware
-
-## 🔧 Configurare
-
-### 1. Ollama LLM
-
-Asigură-te că Ollama rulează și este accesibil la adresa configurată în `main.py`:
-
-
-### 2. Tesseract OCR (pentru imagini)
-
-Vezi `INSTALARE_OCR.md` pentru instrucțiuni detaliate.
-
-**Windows:**
-- Descarcă de la: https://github.com/UB-Mannheim/tesseract/wiki
-- Instalează și bifează limba română
-
-**Linux:**
-```bash
-sudo apt-get install tesseract-ocr tesseract-ocr-ron
 ```
-
-**macOS:**
-```bash
-brew install tesseract tesseract-lang
+chatAI/
+├── app/                    # Aplicație Next.js (frontend)
+├── components/             # Componente React
+├── core/                   # Module Python core
+│   ├── auth.py            # Autentificare și JWT
+│   ├── cache.py           # Cache pentru config-uri
+│   ├── config.py          # Configurație aplicație
+│   ├── conversation.py    # Gestionare conversații
+│   └── prompt.py         # Gestionare prompt-uri
+├── routers/                # Router-uri FastAPI
+│   ├── admin.py          # Endpoint-uri administrare
+│   ├── auth.py           # Endpoint-uri autentificare
+│   ├── chat.py           # Endpoint-uri chat
+│   ├── files.py          # Endpoint-uri pentru fișiere
+│   └── static.py         # Pagini statice
+├── models/                 # Modele Pydantic
+│   └── schemas.py        # Schema-uri pentru request/response
+├── migrations/             # Scripturi SQL pentru migrări
+├── docs/                   # Documentație completă
+├── scripts/                # Scripturi de pornire
+├── database.py            # Gestionare baza de date
+├── rag_manager.py         # Gestionare RAG
+└── prompt_builder.py      # Construire prompt-uri dinamice
 ```
-
-## 📖 Utilizare
-
-1. **Pornește serverul:**
-   ```bash
-   uvicorn main:app --host 127.0.0.1 --port 3000 --reload
-   ```
-
-2. **Deschide în browser:**
-   - Pagina principală: http://127.0.0.1:3000
-   - Builder chat: http://127.0.0.1:3000/builder
-   - Pagini exemple:
-     - http://127.0.0.1:3000/rezervari
-     - http://127.0.0.1:3000/evenimente
-     - http://127.0.0.1:3000/primarie
-
-3. **Funcționalități:**
-   - Chat AI cu streaming
-   - Auto-completare formulare
-   - Încărcare PDF-uri (extragere text)
-   - Încărcare imagini (OCR)
-   - Suport pentru multiple fișiere
-
-## 🐛 Rezolvare probleme
-
-### Serverul nu pornește
-- Verifică că portul 3000 nu este folosit de alt proces
-- Verifică că toate dependențele sunt instalate
-
-### Eroare: "Ollama connection failed"
-- Verifică că Ollama rulează
-- Verifică adresa IP în `main.py` (linia 20)
-
-### Eroare: "PyPDF2 nu este instalat"
-```bash
-pip install PyPDF2
-```
-
-### Eroare: "OCR nu este disponibil"
-- Instalează Tesseract OCR (vezi `INSTALARE_OCR.md`)
-- Instalează bibliotecile: `pip install pytesseract pillow`
 
 ## 📚 Documentație
 
-- `INSTALARE_PDF.md` - Instalare suport PDF
-- `INSTALARE_OCR.md` - Instalare suport OCR (imagini)
-- `INTEGRARE.md` - Ghid de integrare chat în pagini
+Toată documentația se află în folderul [`docs/`](docs/):
 
-## 🔗 Endpoints API
+- **[docs/README.md](docs/README.md)** - Index complet al documentației
+- **[docs/PORNIRE.md](docs/PORNIRE.md)** - Ghid pentru pornirea aplicației
+- **[docs/CONFIGURARE_BAZA_DATE.md](docs/CONFIGURARE_BAZA_DATE.md)** - Configurare MySQL
+- **[docs/SECURITATE_ENV.md](docs/SECURITATE_ENV.md)** - Configurare variabile de mediu
+- **[docs/MULTI_TENANT_ARCHITECTURE.md](docs/MULTI_TENANT_ARCHITECTURE.md)** - Arhitectura multi-tenant
 
-- `POST /ask` - Chat default
-- `POST /chat/{chat_id}/ask` - Chat cu config specific
-- `POST /extract-pdf` - Extragere text din PDF
-- `POST /extract-image` - Extragere text din imagini (OCR)
-- `GET /builder` - Builder pentru creare chat-uri noi
+## 🛠️ Tehnologii
 
-# IntegraChatAI
-# IntegraChatAI
+### Backend
+- **FastAPI** - Framework web modern și rapid
+- **Ollama** - LLM local pentru generare de răspunsuri
+- **MySQL** - Baza de date
+- **PyPDF2** - Procesare PDF-uri
+- **Tesseract OCR** - Extragere text din imagini
+
+### Frontend
+- **Next.js** - Framework React
+- **TypeScript** - Tipare statice
+- **Tailwind CSS** - Stilizare
+
+## 🔧 Configurare
+
+1. **Baza de date**: Vezi [docs/CONFIGURARE_BAZA_DATE.md](docs/CONFIGURARE_BAZA_DATE.md)
+2. **Variabile de mediu**: Vezi [docs/SECURITATE_ENV.md](docs/SECURITATE_ENV.md)
+3. **Ollama**: Asigură-te că Ollama rulează și ai modelele necesare instalate
+
+## 📝 Licență
+
+Proiect privat - Integra AI
+

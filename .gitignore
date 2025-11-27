@@ -1,49 +1,31 @@
-# Dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-# Testing
-/coverage
-
-# Next.js
-/.next/
-/out/
-
-# Production
-/build
-
-# Misc
-.DS_Store
-*.pem
-
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Local env files
-.env*.local
-.env
-
-# Vercel
-.vercel
-
-# TypeScript
-*.tsbuildinfo
-next-env.d.ts
-
-# Python cache
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# Date generate și fișiere utilizator
-vector_stores/
-rag/
-configs/
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
 
 # IDE
 .vscode/
@@ -52,3 +34,39 @@ configs/
 *.swo
 *~
 
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Node modules
+node_modules/
+.next/
+out/
+build/
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project specific
+rag/*/
+!rag/.gitkeep
+vector_stores/*/
+!vector_stores/.gitkeep
+*.pkl
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

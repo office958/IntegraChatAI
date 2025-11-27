@@ -83,9 +83,11 @@ export default function ChatSidebar({ isOpen, onToggle, currentChatId, currentSe
     loadChatSessions();
     
     // Reîncarcă sesiunile la fiecare 30 de secunde
-    const interval = setInterval(loadChatSessions, 30000);
+    // Dacă există o sesiune activă, reîncarcă mai des (la 5 secunde) pentru a detecta schimbările de titlu
+    const intervalTime = currentSessionId ? 5000 : 30000;
+    const interval = setInterval(loadChatSessions, intervalTime);
     return () => clearInterval(interval);
-  }, [currentChatId, userId, token]);
+  }, [currentChatId, currentSessionId, userId, token]);
 
   // Închide meniul când se face click în afara lui
   useEffect(() => {
