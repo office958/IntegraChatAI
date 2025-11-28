@@ -21,7 +21,22 @@ export function speakText(text: string, onEnd?: () => void) {
 
   // Creează un nou utterance
   const utterance = new SpeechSynthesisUtterance(text.trim());
-  utterance.lang = 'ro-RO';
+  // Setează limba/vocea din setările salvate (dacă există)
+  try {
+    const savedLang = (localStorage.getItem('speechLanguage') as string) || 'ro-RO';
+    utterance.lang = savedLang;
+
+    const savedVoiceName = localStorage.getItem('voice');
+    if (savedVoiceName && savedVoiceName !== 'default') {
+      const voices = window.speechSynthesis.getVoices();
+      const match = voices.find((v) => v.name === savedVoiceName || (`${v.name} (${v.lang})`) === savedVoiceName);
+      if (match) {
+        utterance.voice = match;
+      }
+    }
+  } catch (e) {
+    utterance.lang = 'ro-RO';
+  }
   utterance.rate = 1.0;
   utterance.pitch = 1.0;
   utterance.volume = 1.0;

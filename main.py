@@ -23,4 +23,11 @@ app.include_router(static.router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Configurare pentru a preveni oprirea serverului la erori
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=8000,
+        timeout_keep_alive=75,  # Timeout mai mare pentru procesare OCR
+        log_level="info"
+    )

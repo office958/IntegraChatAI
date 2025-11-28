@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { MessageType } from '@/types';
 import { formatMessageText } from '@/utils/messageFormatter';
 import { speakText } from '@/utils/textToSpeech';
+import { getUILocale } from '@/utils/locale';
 import { copyToClipboard } from '@/utils/clipboard';
 import styles from './Message.module.css';
 
@@ -76,7 +77,7 @@ export default function Message({ message, isStreaming = false }: MessageProps) 
           {/* Timestamp la sfârșit */}
           {(message.content || (message.files && message.files.length > 0)) && (
             <div className={styles.messageTime}>
-              {message.timestamp.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+              {message.timestamp.toLocaleTimeString(getUILocale(), { hour: '2-digit', minute: '2-digit' })}
             </div>
           )}
         </div>

@@ -29,7 +29,13 @@ export function useSpeechToText({ onTranscript }: UseSpeechToTextOptions) {
     const rec = new SpeechRecognition();
     rec.continuous = false;
     rec.interimResults = false;
-    rec.lang = 'ro-RO';
+    // Folosim limba salvată în setări, implicit 'ro-RO'
+    try {
+      const savedSpeechLang = (localStorage.getItem('speechLanguage') as string) || 'ro-RO';
+      rec.lang = savedSpeechLang;
+    } catch (e) {
+      rec.lang = 'ro-RO';
+    }
 
     rec.onstart = () => {
       setIsListening(true);
@@ -69,6 +75,13 @@ export function useSpeechToText({ onTranscript }: UseSpeechToTextOptions) {
     }
 
     try {
+      // Asigurăm că folosim limba curentă din setări înainte de start
+      try {
+        const savedSpeechLang = (localStorage.getItem('speechLanguage') as string) || 'ro-RO';
+        recognition.lang = savedSpeechLang;
+      } catch (e) {
+        // ignore
+      }
       recognition.start();
     } catch (error) {
       console.error('Error starting speech recognition:', error);

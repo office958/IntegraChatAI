@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { getUILocale } from '@/utils/locale';
 import styles from './ChatSidebar.module.css';
 import ConfirmModal from './ConfirmModal';
 
@@ -504,7 +505,7 @@ export default function ChatSidebar({ isOpen, onToggle, currentChatId, currentSe
                                 <div className={styles.chatItemPreview}>{session.lastMessage}</div>
                               )}
                               <div className={styles.chatItemTime}>
-                                {session.timestamp.toLocaleDateString('ro-RO', { day: 'numeric', month: 'short' })}
+                                {session.timestamp.toLocaleDateString(getUILocale(), { day: 'numeric', month: 'short' })}
                               </div>
                             </div>
                           </button>

@@ -111,18 +111,77 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
         // Extrage textul din PDF-uri/imagini
         let pdfText = '';
         if (pdfFiles && pdfFiles.length > 0) {
-          const texts = await Promise.all(
+          console.log(`📎 Procesare ${pdfFiles.length} fișier(e):`, pdfFiles.map(f => ({ name: f.name, type: f.type })));
+          
+          const extractionResults = await Promise.allSettled(
             pdfFiles.map(async (file) => {
-              if (file.type.startsWith('image/')) {
-                return await extractImageText(file);
-              } else {
-                return await extractPDFText(file);
+              try {
+                console.log(`🔄 Procesare fișier: ${file.name}, type: ${file.type}`);
+                if (file.type.startsWith('image/')) {
+                  console.log(`  → Folosește extractImageText pentru ${file.name}`);
+                  return await extractImageText(file);
+                } else {
+                  console.log(`  → Folosește extractPDFText pentru ${file.name}`);
+                  return await extractPDFText(file);
+                }
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Eroare necunoscută';
+                console.error(`❌ Eroare la extragerea textului din ${file.name}:`, errorMessage);
+                throw new Error(`Eroare la ${file.name}: ${errorMessage}`);
               }
             })
           );
-          pdfText = texts
-            .filter((t) => t)
-            .map((t, i) => `\n--- ${pdfFiles[i].name} ---\n${t}`)
+          
+          // Procesează rezultatele și colectează erorile
+          const texts: string[] = [];
+          const errors: string[] = [];
+          
+          extractionResults.forEach((result, index) => {
+            if (result.status === 'fulfilled' && result.value) {
+              texts.push(result.value);
+            } else {
+              const fileName = pdfFiles[index].name;
+              const errorMsg = result.status === 'rejected' 
+                ? (result.reason instanceof Error ? result.reason.message : String(result.reason))
+                : 'Eroare necunoscută';
+              errors.push(`${fileName}: ${errorMsg}`);
+              console.error(`❌ Nu s-a putut extrage text din ${fileName}:`, errorMsg);
+            }
+          });
+          
+          // Dacă există erori, afișează-le utilizatorului
+          if (errors.length > 0) {
+            const errorMessage = errors.length === pdfFiles.length
+              ? `Nu s-a putut extrage text din niciun fișier:\n${errors.join('\n')}`
+              : `Atenție: Nu s-a putut extrage text din ${errors.length} fișier(e):\n${errors.join('\n')}`;
+            
+            const warningMessage: MessageType = {
+              id: Date.now().toString() + '-warning',
+              role: 'assistant',
+              content: `⚠️ ${errorMessage}\n\n${texts.length > 0 ? 'Textul extras din celelalte fișiere va fi folosit.' : 'Nu se poate continua fără text extras.'}`,
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, warningMessage]);
+            
+            // Dacă nu s-a extras text din niciun fișier, oprește procesarea
+            if (texts.length === 0) {
+              setIsStreaming(false);
+              return;
+            }
+          }
+          
+          // Mapează corect numele fișierelor pentru textele extrase
+          let textIndex = 0;
+          pdfText = extractionResults
+            .map((result, fileIndex) => {
+              if (result.status === 'fulfilled' && result.value) {
+                const fileName = pdfFiles[fileIndex].name;
+                const text = result.value;
+                return `\n--- ${fileName} ---\n${text}`;
+              }
+              return null;
+            })
+            .filter((item): item is string => item !== null)
             .join('\n\n');
           
           // Limitează la 5000 caractere
