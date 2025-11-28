@@ -16,7 +16,7 @@ export default function ChatContainer() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { config, loading: configLoading } = useChatConfig(chatId);
-  const { messages, sendMessage, isStreaming, isLoadingHistory } = useChat(chatId, sessionId);
+  const { messages, sendMessage, isStreaming } = useChat(chatId, sessionId);
 
   const { token } = useAuth();
   const router = useRouter();
@@ -143,7 +143,7 @@ export default function ChatContainer() {
     }
   };
 
-  if (configLoading || isLoadingHistory) {
+  if (configLoading) {
     return (
       <div className={styles.loadingContainer}>
         <div className={styles.loadingSpinner}>Se încarcă conversația...</div>

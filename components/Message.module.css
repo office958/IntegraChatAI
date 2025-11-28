@@ -125,10 +125,40 @@
   margin-right: auto;
 }
 
+.messageTextWrapper {
+  display: inline-block;
+  position: relative;
+  width: 100%;
+}
+
 .ai .messageText {
   padding: 0;
   line-height: 1.75;
   font-size: 15px;
+  display: inline;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.typingCursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: var(--primary-color, #3b82f6);
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  animation: blinkCursor 1s infinite;
+  position: relative;
+  top: 2px;
+}
+
+@keyframes blinkCursor {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
 }
 
 .messageTime {

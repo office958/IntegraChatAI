@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { MessageType } from './MessageList';
+import { MessageType } from '@/types';
 import { formatMessageText } from '@/utils/messageFormatter';
 import { speakText } from '@/utils/textToSpeech';
 import { copyToClipboard } from '@/utils/clipboard';
@@ -90,10 +90,16 @@ export default function Message({ message, isStreaming = false }: MessageProps) 
         {/* Afișează doar dacă există conținut */}
         {message.content && message.content.trim() ? (
           <>
-            <div
-              className={styles.messageText}
-              dangerouslySetInnerHTML={{ __html: formatMessageText(message.content) }}
-            />
+            <div className={styles.messageTextWrapper}>
+              <div
+                className={styles.messageText}
+                dangerouslySetInnerHTML={{ __html: formatMessageText(message.content) }}
+              />
+              {/* Cursor animat când se stream-uiește */}
+              {isStreaming && (
+                <span className={styles.typingCursor}>|</span>
+              )}
+            </div>
             {/* Afișează iconurile doar când nu mai este streaming */}
             {!isStreaming && (
               <div className={styles.messageFooter}>

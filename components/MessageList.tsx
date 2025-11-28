@@ -26,12 +26,13 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
   return (
     <div className={styles.chatMessages}>
       {messages.length === 0 && !isStreaming && <WelcomeMessage />}
-      {messages.map((message) => {
+      {messages.map((message, index) => {
         // Verifică dacă acest mesaj este cel care se stream-uiește acum
+        // Trebuie să fie ultimul mesaj, de tip assistant, și streaming-ul să fie activ
+        const isLastMessage = index === messages.length - 1;
         const isCurrentStreaming = isStreaming && 
           message.role === 'assistant' && 
-          message.id === messages[messages.length - 1]?.id &&
-          (!message.content || message.content.trim() === '');
+          isLastMessage;
         
         return (
           <Message 

@@ -232,18 +232,19 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
           // Decode chunk-ul cu stream: true pentru a gestiona caractere UTF-8 multi-byte
           if (value && value.length > 0) {
             try {
-              const chunk = decoder.decode(value, { stream: true });
+              // Decode fără stream: true pentru caractere individuale
+              const chunk = decoder.decode(value, { stream: false });
               // Adaugă chunk-ul dacă există (chiar și string-uri goale pot fi importante)
               // NU ignorăm niciun chunk - toate sunt importante!
-              if (chunk !== null && chunk !== undefined) {
+              if (chunk !== null && chunk !== undefined && chunk.length > 0) {
                 if (firstChunk) {
                   console.log('🔵 PRIMUL CHUNK primit [' + chunk.length + ' chars]:', chunk.substring(0, 200));
-                  console.log('🔵 PRIMUL CHUNK complet:', JSON.stringify(chunk));
                   firstChunk = false;
                 }
                 accumulatedText += chunk;
                 
                 // Actualizează mesajul imediat pentru efectul de streaming
+                // Folosim flushSync pentru actualizare sincronă și vizibilă
                 flushSync(() => {
                   setMessages((prev) =>
                     prev.map((msg) =>
@@ -253,23 +254,11 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
                     )
                   );
                 });
-              } else {
-                console.warn('⚠️ Chunk ignorat (null/undefined) pentru value:', value);
               }
             } catch (e) {
               console.error('❌ Error decoding chunk:', e, 'Value:', value);
             }
-          } else {
-            // Log pentru debugging - de ce nu se procesează
-            if (value === null || value === undefined) {
-              // Normal pentru ultimul read
-            } else if (value.length === 0) {
-              console.warn('⚠️ Value gol (length 0)');
-            }
           }
-          
-          // Mic delay pentru a permite render-ul UI-ului
-          await new Promise(resolve => setTimeout(resolve, 3));
         }
 
         // Încearcă auto-fill după ce s-a terminat stream-ul

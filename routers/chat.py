@@ -56,8 +56,13 @@ async def stream_response(messages, model, page_context=None, pdf_text=None, rag
         if "message" in chunk and "content" in chunk["message"]:
             content = chunk["message"]["content"]
             if content:
-                yield content
-        await asyncio.sleep(0)
+                # Trimite fiecare caracter separat pentru efect vizual de typing
+                # Acest lucru asigură că utilizatorul vede textul generându-se caracter cu caracter
+                for char in content:
+                    yield char
+                    # Delay foarte mic pentru efect vizual smooth (1.5ms între caractere)
+                    # Acest delay permite render-ul UI-ului fără a fi prea lent
+                    await asyncio.sleep(0.0015)
 
 @router.post("/{chat_id}/ask")
 async def ask_dynamic(chat_id: str, request: ChatRequest, current_user: dict = Depends(get_current_user)):

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import styles from './ChatSidebar.module.css';
+import ConfirmModal from './ConfirmModal';
 
 interface ChatHistoryItem {
   id: string;
@@ -246,19 +247,33 @@ export default function ChatSidebar({ isOpen, onToggle, currentChatId, currentSe
   };
 
   const handleDelete = async (sessionId: string, sessionIdOnly: string) => {
-    if (!currentChatId) return;
+    // replaced by confirm modal flow
+    promptDelete(sessionId, sessionIdOnly);
+  };
 
-    if (!confirm('Ești sigur că vrei să ștergi această conversație? Această acțiune este ireversibilă și va șterge toate mesajele.')) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmSessionIdOnly, setConfirmSessionIdOnly] = useState<string | null>(null);
+  const [confirmSessionLabel, setConfirmSessionLabel] = useState<string | null>(null);
+
+  const promptDelete = (sessionId: string, sessionIdOnly: string) => {
+    setConfirmSessionIdOnly(sessionIdOnly);
+    setConfirmSessionLabel(sessionId);
+    setConfirmOpen(true);
+    setMenuOpenChatId(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!currentChatId || !confirmSessionIdOnly) {
+      setConfirmOpen(false);
       return;
     }
 
+    setConfirmOpen(false);
     try {
       const headers: HeadersInit = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const response = await fetch(`/api/chat/${currentChatId}/session/${sessionIdOnly}`, {
+      const response = await fetch(`/api/chat/${currentChatId}/session/${confirmSessionIdOnly}`, {
         method: 'DELETE',
         headers,
       });
@@ -301,25 +316,39 @@ export default function ChatSidebar({ isOpen, onToggle, currentChatId, currentSe
         };
 
         loadChatSessions();
-        setMenuOpenChatId(null);
 
         // Dacă ștergem sesiunea curentă, navigăm la chatbot
-        if (currentSessionId === sessionIdOnly) {
+        if (currentSessionId === confirmSessionIdOnly) {
           router.push(`/chat/${currentChatId}`);
         }
       } else {
         const errorData = await response.json().catch(() => ({ detail: 'Eroare necunoscută' }));
+        // show modal with error or fallback to alert for now
         alert(`Eroare la ștergere: ${errorData.detail || response.statusText}`);
       }
     } catch (error) {
       console.error('Error deleting session:', error);
       alert('Eroare la ștergerea conversației');
+    } finally {
+      setConfirmSessionIdOnly(null);
+      setConfirmSessionLabel(null);
     }
   };
 
 
   return (
     <>
+      <ConfirmModal
+        open={confirmOpen}
+        title="Șterge conversația"
+        message={
+          'Ești sigur că vrei să ștergi această conversație? Această acțiune este ireversibilă și va șterge toate mesajele.'
+        }
+        confirmText="Șterge"
+        cancelText="Anulează"
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirmOpen(false)}
+      />
       {/* Overlay pentru mobile */}
       {isOpen && (
         <div className={styles.overlay} onClick={onToggle} />
