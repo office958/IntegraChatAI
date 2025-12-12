@@ -70,20 +70,35 @@ async def login(request: LoginRequest):
         # Obține utilizatorul după email
         user = get_user(email=request.email)
         if not user:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Email sau parolă incorectă"
+                content={"error": "Email sau parolă incorectă", "detail": "Email-ul nu există în sistem"}
+            )
+        
+        # Verifică dacă parola există în user
+        if 'password' not in user:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"error": "Eroare la autentificare", "detail": "Parola utilizatorului nu a fost găsită"}
             )
         
         # Verifică parola
         if not verify_password(request.password, user['password']):
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Email sau parolă incorectă"
+                content={"error": "Email sau parolă incorectă", "detail": "Parola este incorectă"}
             )
         
         # Creează token JWT
-        access_token = create_access_token(data={"sub": str(user['id']), "email": user['email']})
+        try:
+            access_token = create_access_token(data={"sub": str(user['id']), "email": user['email']})
+        except Exception as e:
+            import traceback
+            print(f"❌ Eroare la crearea token-ului: {traceback.format_exc()}")
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"error": "Eroare la crearea token-ului", "detail": str(e)}
+            )
         
         # Elimină parola din răspuns
         user_response = {k: v for k, v in user.items() if k != 'password'}
@@ -93,13 +108,23 @@ async def login(request: LoginRequest):
             token_type="bearer",
             user=user_response
         )
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        # Returnează ca JSON
+        return JSONResponse(
+            status_code=e.status_code,
+            content={"error": e.detail, "detail": e.detail}
+        )
     except Exception as e:
-        print(f"❌ Eroare la login: {e}")
-        raise HTTPException(
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"❌ Eroare la login: {error_details}")
+        return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Eroare la autentificare: {str(e)}"
+            content={
+                "error": "Eroare la autentificare",
+                "detail": str(e),
+                "type": type(e).__name__
+            }
         )
 
 @router.get("/me")

@@ -1,0 +1,18 @@
+{
+  "form_name": "Cerere Certificat Naștere Copil",
+  "pdf_template": "CERERE-CERTIFICAT-NASTERE-COPIL.pdf",
+  "type": "acroform",
+  "description": "Mapping pentru formularul de cerere certificat naștere copil cu câmpuri AcroForm",
+  "field_mapping": {
+    "nume": "Nume",
+    "prenume": "Prenume",
+    "data_nasterii": "DataNasterii",
+    "loc_nasterii": "LocNasterii",
+    "adresa": "Adresa",
+    "telefon": "Telefon",
+    "email": "Email",
+    "cnp": "CNP"
+  },
+  "notes": "Mapping-ul asociază cheile din JSON cu numele exacte ale câmpurilor din PDF"
+}
+

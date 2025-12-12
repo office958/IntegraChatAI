@@ -10,9 +10,11 @@ import styles from './MessageList.module.css';
 interface MessageListProps {
   messages: MessageType[];
   isStreaming?: boolean;
+  chatId?: string | null;
+  sessionId?: string | null;
 }
 
-export default function MessageList({ messages, isStreaming }: MessageListProps) {
+export default function MessageList({ messages, isStreaming, chatId, sessionId }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,6 +41,8 @@ export default function MessageList({ messages, isStreaming }: MessageListProps)
             key={message.id} 
             message={message} 
             isStreaming={isCurrentStreaming}
+            chatId={chatId}
+            sessionId={sessionId}
           />
         );
       })}

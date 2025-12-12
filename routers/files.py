@@ -8,22 +8,15 @@ import pytesseract
 
 router = APIRouter(tags=["files"])
 
-# Verifică dacă pdf2image este disponibil pentru conversie PDF -> imagine
-PDF2IMAGE_AVAILABLE = False
-try:
-    from pdf2image import convert_from_bytes
-    # Testează dacă poppler este disponibil (necesar pentru pdf2image)
+# Importă PDF2IMAGE_AVAILABLE din config (verificat la start)
+from core.config import PDF2IMAGE_AVAILABLE
+
+# Importă convert_from_bytes dacă este disponibil
+if PDF2IMAGE_AVAILABLE:
     try:
-        # Încearcă o conversie de test (nu facem conversie reală, doar verificăm dacă funcția există)
-        PDF2IMAGE_AVAILABLE = True
-    except Exception as poppler_error:
+        from pdf2image import convert_from_bytes
+    except ImportError:
         PDF2IMAGE_AVAILABLE = False
-        print(f"⚠️ pdf2image este instalat, dar poppler nu este disponibil. PDF-urile scanate nu pot fi procesate cu OCR.")
-        print(f"💡 Instalează poppler: Windows - descarcă de la https://github.com/oschwartz10612/poppler-windows/releases")
-        print(f"💡 Linux: sudo apt-get install poppler-utils | macOS: brew install poppler")
-except ImportError:
-    PDF2IMAGE_AVAILABLE = False
-    print("⚠️ pdf2image nu este instalat. PDF-urile scanate nu pot fi procesate cu OCR. Rulează: pip install pdf2image")
 
 @router.post("/extract-pdf")
 async def extract_pdf(pdf: UploadFile = File(...)):

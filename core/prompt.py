@@ -82,6 +82,30 @@ def enhance_prompt_for_autofill(base_prompt, page_context=None, pdf_text=None, r
         # Limitează la primele 2000 caractere pentru prompt (optimizare viteză mai agresivă)
         pdf_text_limited = pdf_text[:2000] if len(pdf_text) > 2000 else pdf_text
         enhanced += f"\n\n=== DOCUMENT ÎNCĂRCAT DE UTILIZATOR ===\n{pdf_text_limited}\n\nExtrage: nume, adrese, date, numere. Completează câmpurile pe baza acestui document."
+        
+        # Adaugă instrucțiuni pentru procesare cereri complexe
+        enhanced += "\n\n=== PROCESARE CERERI COMPLEXE ==="
+        enhanced += "\nCând utilizatorul cere să extragi date din imagini/PDF-uri, completezi un formular PDF și generezi PDF nou:"
+        enhanced += "\n1. ANALIZĂ: Identifică toate documentele încărcate (PDF-uri, imagini) și PDF-urile din RAG"
+        enhanced += "\n2. EXTRAGERE: Extrage toate datele relevante din fiecare document (nume, prenume, CNP, adrese, date, etc.)"
+        enhanced += "\n3. MAPARE: Identifică câmpurile din formularul PDF care trebuie completate (ex: cerere certificat naștere copil)"
+        enhanced += "\n4. IDENTIFICARE PDF TEMPLATE: Dacă utilizatorul menționează un PDF specific sau dacă există un PDF în RAG care corespunde cererii, menționează numele acestuia în răspuns (ex: 'CERERE-CERTIFICAT-NASTERE-COPIL.pdf')"
+        enhanced += "\n5. COMPLETARE: Mapează datele extrase la câmpurile formularului"
+        enhanced += "\n6. STRUCTURARE: Returnează datele în format JSON structurat, cu chei care corespund câmpurilor formularului"
+        enhanced += "\n7. GENERARE: Când utilizatorul cere 'generează PDF' sau 'generează aici pdf-ul', returnează JSON cu datele și sugerează folosirea butonului de generare PDF"
+        enhanced += "\n\nIMPORTANT: Dacă cunoști numele PDF-ului template din RAG sau din conversație, menționează-l explicit în răspuns (ex: 'Voi completa formularul CERERE-CERTIFICAT-NASTERE-COPIL.pdf cu datele extrase')"
+        enhanced += "\n\nFormat JSON recomandat:"
+        enhanced += '\n{"nume": "valoare", "prenume": "valoare", "data_nasterii": "valoare", "cnp": "valoare", "adresa": "valoare", ...}'
+        enhanced += "\n\nIMPORTANT: Dacă utilizatorul cere explicit generare PDF sau 'generează aici pdf-ul',"
+        enhanced += "\nOBLIGATORIU: Începe răspunsul cu un bloc JSON valid în format markdown:"
+        enhanced += "\n```json"
+        enhanced += "\n{"
+        enhanced += '\n  "nume": "valoare",'
+        enhanced += '\n  "prenume": "valoare",'
+        enhanced += '\n  ...'
+        enhanced += "\n}"
+        enhanced += "\n```"
+        enhanced += "\nApoi adaugă text explicativ după blocul JSON. JSON-ul trebuie să fie primul lucru din răspuns!"
     
     if page_context and page_context.get("has_form"):
         # Folosește informațiile detaliate despre câmpuri dacă sunt disponibile

@@ -206,6 +206,16 @@
   animation: pulse-tts 1.5s infinite;
 }
 
+.actionBtn.generating {
+  background: #f3f4f6;
+  color: var(--primary-color);
+  cursor: wait;
+}
+
+.actionBtn.generating svg.spinning {
+  animation: spin 1s linear infinite;
+}
+
 @keyframes pulse-tts {
   0%,
   100% {
@@ -213,6 +223,15 @@
   }
   50% {
     opacity: 0.6;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 

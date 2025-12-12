@@ -33,18 +33,34 @@ def get_embedding(text: str) -> List[float]:
         # Încearcă să folosească modelul de embeddings
         response = ollama.embeddings(model=EMBEDDING_MODEL, prompt=text)
         if response and 'embedding' in response:
-            return response['embedding']
+            embedding = response['embedding']
+            # Verifică că embedding-ul este valid
+            if embedding and len(embedding) > 0:
+                return embedding
     except Exception as e:
         print(f"⚠️ Eroare la obținerea embedding-ului cu {EMBEDDING_MODEL}: {e}")
         print("💡 Folosind fallback: hash-based similarity")
     
     # Fallback: folosește hash pentru simplitate (nu este semantic, dar funcționează)
     # În producție, ar trebui să folosești un model de embeddings real
+    # Folosim dimensiunea standard de 768 pentru a se potrivi cu majoritatea modelelor
     hash_obj = hashlib.md5(text.encode())
-    # Convertim hash-ul într-un vector de dimensiune fixă (128)
     hash_bytes = hash_obj.digest()
-    vector = [float(b) / 255.0 for b in hash_bytes] * (128 // len(hash_bytes) + 1)
-    return vector[:128]
+    # Generează un vector de 768 dimensiuni (standard pentru multe modele)
+    # Repetă hash-ul pentru a obține dimensiunea dorită
+    vector = []
+    target_dim = 768  # Dimensiune standard pentru compatibilitate
+    while len(vector) < target_dim:
+        for byte in hash_bytes:
+            vector.append(float(byte) / 255.0)
+            if len(vector) >= target_dim:
+                break
+        # Dacă nu am ajuns la dimensiunea dorită, extinde hash-ul
+        if len(vector) < target_dim:
+            hash_obj.update(text.encode())
+            hash_bytes = hash_obj.digest()
+    
+    return vector[:target_dim]
 
 def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     """Calculează similaritatea cosinus între doi vectori"""
@@ -170,12 +186,51 @@ class TenantRAGStore:
         
         # Generează embedding pentru query
         query_embedding = get_embedding(query)
+        query_dim = len(query_embedding)
         
-        # Calculează similarități
-        similarities = []
+        # Verifică și aliniază dimensiunile embedding-urilor existente
+        valid_embeddings = []
+        valid_indices = []
+        
         for i, doc_embedding in enumerate(self.embeddings):
-            similarity = cosine_similarity(query_embedding, doc_embedding)
-            similarities.append((i, similarity))
+            doc_dim = len(doc_embedding) if isinstance(doc_embedding, (list, np.ndarray)) else 0
+            
+            # Dacă dimensiunile nu se potrivesc, încearcă să le alinieze
+            if doc_dim != query_dim:
+                # Dacă embedding-ul documentului este mai mare, trunchiază
+                if doc_dim > query_dim:
+                    if isinstance(doc_embedding, np.ndarray):
+                        doc_embedding = doc_embedding[:query_dim].tolist()
+                    else:
+                        doc_embedding = doc_embedding[:query_dim]
+                # Dacă embedding-ul documentului este mai mic, pad cu zerouri
+                elif doc_dim < query_dim:
+                    if isinstance(doc_embedding, np.ndarray):
+                        padding = np.zeros(query_dim - doc_dim)
+                        doc_embedding = np.concatenate([doc_embedding, padding]).tolist()
+                    else:
+                        doc_embedding = list(doc_embedding) + [0.0] * (query_dim - doc_dim)
+            
+            # Verifică că dimensiunile se potrivesc acum
+            if len(doc_embedding) == query_dim:
+                valid_embeddings.append(doc_embedding)
+                valid_indices.append(i)
+            else:
+                print(f"⚠️ Skip embedding {i}: dimensiuni nealiniate (doc: {len(doc_embedding)}, query: {query_dim})")
+        
+        if not valid_embeddings:
+            print(f"⚠️ Nu există embedding-uri valide pentru search (query dim: {query_dim})")
+            return []
+        
+        # Calculează similarități doar pentru embedding-urile valide
+        similarities = []
+        for idx, doc_embedding in zip(valid_indices, valid_embeddings):
+            try:
+                similarity = cosine_similarity(query_embedding, doc_embedding)
+                similarities.append((idx, similarity))
+            except Exception as e:
+                print(f"⚠️ Eroare la calcularea similarității pentru embedding {idx}: {e}")
+                continue
         
         # Sortează după similaritate
         similarities.sort(key=lambda x: x[1], reverse=True)

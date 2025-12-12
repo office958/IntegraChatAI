@@ -1,0 +1,47 @@
+{
+  "form_name": "Cerere Simplă",
+  "pdf_template": "cerere_simpla.pdf",
+  "type": "coordinates",
+  "description": "Mapping pentru formular simplu fără câmpuri AcroForm, folosind coordonate",
+  "fields": [
+    {
+      "json_key": "nume",
+      "x": 100,
+      "y": 700,
+      "page": 1,
+      "font": "helv",
+      "font_size": 12,
+      "color": [0, 0, 0],
+      "description": "Nume completat la coordonatele (100, 700) pe pagina 1"
+    },
+    {
+      "json_key": "prenume",
+      "x": 100,
+      "y": 680,
+      "page": 1,
+      "font": "helv",
+      "font_size": 12,
+      "color": [0, 0, 0]
+    },
+    {
+      "json_key": "data_nasterii",
+      "x": 100,
+      "y": 660,
+      "page": 1,
+      "font": "helv",
+      "font_size": 12,
+      "color": [0, 0, 0]
+    },
+    {
+      "json_key": "adresa",
+      "x": 100,
+      "y": 640,
+      "page": 1,
+      "font": "helv",
+      "font_size": 11,
+      "color": [0, 0, 0]
+    }
+  ],
+  "notes": "Coordonatele sunt în puncte (points), unde 1 inch = 72 points. Originea (0,0) este în colțul stânga-jos al paginii."
+}
+

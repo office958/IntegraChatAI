@@ -1,96 +1,103 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { PDFFile } from '@/types';
+import { useRef, useCallback } from 'react';
+import { PDFFile } from '@/hooks/usePDFUpload';
 import styles from './PDFUploadPopup.module.css';
 
 interface PDFUploadPopupProps {
   onClose: () => void;
-  onFileSelect: (file: PDFFile) => void;
+  onFileSelect: (file: File) => void;
   existingFiles: PDFFile[];
 }
 
-export default function PDFUploadPopup({ onClose, onFileSelect, existingFiles }: PDFUploadPopupProps) {
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+export default function PDFUploadPopup({
+  onClose,
+  onFileSelect,
+  existingFiles,
+}: PDFUploadPopupProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const allowedTypes = {
-    'application/pdf': 'pdf' as const,
-    'image/jpeg': 'image' as const,
-    'image/jpg': 'image' as const,
-    'image/png': 'image' as const,
-    'image/gif': 'image' as const,
-    'image/bmp': 'image' as const,
-    'image/webp': 'image' as const,
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    const validFiles: PDFFile[] = [];
-
-    for (const file of files) {
-      const fileType = allowedTypes[file.type as keyof typeof allowedTypes];
-      if (!fileType) {
-        alert(`⚠️ ${file.name} nu este PDF sau imagine suportată!`);
-        continue;
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        Array.from(files).forEach((file) => {
+          // Check if file is already in the list
+          const isDuplicate = existingFiles.some(
+            (existing) => existing.filename === file.name && existing.file.size === file.size
+          );
+          
+          if (!isDuplicate) {
+            onFileSelect(file);
+          }
+        });
       }
-
-      if (file.size > 10 * 1024 * 1024) {
-        alert(`⚠️ ${file.name} este prea mare! Maxim 10MB.`);
-        continue;
+      
+      // Reset input so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
+    },
+    [onFileSelect, existingFiles]
+  );
 
-      if (existingFiles.some((f) => f.filename === file.name)) {
-        alert(`⚠️ ${file.name} este deja încărcat!`);
-        continue;
-      }
-
-      validFiles.push({
-        file,
-        filename: file.name,
-        type: fileType,
-      });
-    }
-
-    validFiles.forEach((file) => onFileSelect(file));
-    if (validFiles.length > 0) {
-      onClose();
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleUploadClick = () => {
+  const handleButtonClick = useCallback(() => {
     fileInputRef.current?.click();
-  };
+  }, []);
+
+  const handleBackdropClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.target === e.currentTarget) {
+        onClose();
+      }
+    },
+    [onClose]
+  );
 
   return (
-    <div className={styles.uploadPopup} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={styles.uploadPopup} onClick={handleBackdropClick}>
       <div className={styles.uploadPopupContent}>
         <div className={styles.uploadPopupHeader}>
           <h3>Încarcă fișiere</h3>
-          <button type="button" className={styles.uploadPopupClose} onClick={onClose}>
+          <button
+            type="button"
+            className={styles.uploadPopupClose}
+            onClick={onClose}
+            aria-label="Închide"
+          >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z" fill="currentColor"/>
+              <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
         </div>
+        
         <div className={styles.uploadPopupBody}>
           <input
             ref={fileInputRef}
             type="file"
+            accept=".pdf,image/*"
             multiple
-            accept=".pdf,.png,.jpg,.jpeg,.gif,.bmp,.webp"
-            onChange={handleFileSelect}
+            onChange={handleFileChange}
             style={{ display: 'none' }}
+            aria-label="Selectează fișiere"
           />
-          <button type="button" className={styles.uploadPopupBtn} onClick={handleUploadClick}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4C9.11 4 6.6 5.64 5.35 8.04C2.34 8.36 0 10.91 0 14C0 17.31 2.69 20 6 20H19C21.76 20 24 17.76 24 15C24 12.36 21.95 10.22 19.35 10.04ZM14 13V17H10V13H7L12 8L17 13H14Z" fill="currentColor"/>
+          
+          <button
+            type="button"
+            className={styles.uploadPopupBtn}
+            onClick={handleButtonClick}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M7 10L12 15L17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M12 15V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            <span>Încarcă fișiere</span>
+            Selectează fișiere PDF sau imagini
           </button>
+          
+          <p style={{ margin: 0, fontSize: '14px', color: '#6b7280', textAlign: 'center' }}>
+            Suportă PDF și imagini (JPG, PNG, etc.)
+          </p>
         </div>
       </div>
     </div>

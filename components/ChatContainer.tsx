@@ -181,7 +181,12 @@ export default function ChatContainer() {
           sidebarOpen={sidebarOpen}
         />
         <div className={styles.chatContentWrapper}>
-          <MessageList messages={messages} isStreaming={isStreaming} />
+          <MessageList 
+            messages={messages} 
+            isStreaming={isStreaming}
+            chatId={chatId}
+            sessionId={sessionId}
+          />
           <MessageInput
             onSendMessage={handleSendMessage}
             isStreaming={isStreaming}

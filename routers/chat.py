@@ -315,18 +315,34 @@ async def list_sessions(chat_id: str, current_user: dict = Depends(get_current_u
             client_chat_id = int(chat_id)
         except ValueError:
             # Dacă nu este int, caută după name
-            client = get_client_chat(chat_id)
-            if not client:
+            try:
+                from database import get_client_chat
+                client = get_client_chat(chat_id)
+                if not client:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Chat {chat_id} nu există"
+                    )
+                client_chat_id = client['id']
+            except Exception as db_error:
+                print(f"❌ Eroare la căutarea chat-ului: {db_error}")
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Chat {chat_id} nu există"
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Eroare la accesarea bazei de date: {str(db_error)}"
                 )
-            client_chat_id = client['id']
         
         # Obține user_id din token sau default
         user_id = current_user.get('id') if current_user else 1
         
-        sessions = list_user_chat_sessions(user_id, client_chat_id)
+        try:
+            from database import list_user_chat_sessions
+            sessions = list_user_chat_sessions(user_id, client_chat_id)
+        except Exception as db_error:
+            print(f"❌ Eroare la listarea sesiunilor din baza de date: {db_error}")
+            import traceback
+            traceback.print_exc()
+            # Returnează lista goală în loc să crape
+            sessions = []
         
         return JSONResponse(content={
             "success": True,
@@ -335,10 +351,12 @@ async def list_sessions(chat_id: str, current_user: dict = Depends(get_current_u
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Eroare la listarea sesiunilor: {e}")
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"❌ Eroare la listarea sesiunilor: {error_details}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail=f"Eroare internă: {str(e)}"
         )
 
 @router.post("/{chat_id}/clear")

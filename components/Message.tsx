@@ -1,21 +1,41 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { MessageType } from '@/types';
 import { formatMessageText } from '@/utils/messageFormatter';
 import { speakText } from '@/utils/textToSpeech';
 import { getUILocale } from '@/utils/locale';
 import { copyToClipboard } from '@/utils/clipboard';
+import { detectPDFGenerationRequest, generatePDFFromChat, downloadBlob, extractJSONFromMessage } from '@/utils/pdfDownload';
+import { useAuth } from '@/contexts/AuthContext';
 import styles from './Message.module.css';
 
 interface MessageProps {
   message: MessageType;
   isStreaming?: boolean;
+  chatId?: string | null;
+  sessionId?: string | null;
 }
 
-export default function Message({ message, isStreaming = false }: MessageProps) {
+export default function Message({ message, isStreaming = false, chatId, sessionId }: MessageProps) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [showPDFButton, setShowPDFButton] = useState(false);
+  const router = useRouter();
+  const { token } = useAuth();
+
+  // Detectează dacă mesajul conține cerere de generare PDF
+  useEffect(() => {
+    if (message.role === 'assistant' && message.content && !isStreaming) {
+      const hasPDFRequest = detectPDFGenerationRequest(message.content);
+      const hasJSONData = extractJSONFromMessage(message.content) !== null;
+      // Verifică și dacă mesajul conține cuvinte cheie despre completare formular
+      const hasFormKeywords = /completează|complet|formular|date extrase|datele extrase/i.test(message.content);
+      setShowPDFButton(hasPDFRequest || hasJSONData || hasFormKeywords);
+    }
+  }, [message.content, message.role, isStreaming]);
 
   const handleTTS = () => {
     if (isSpeaking) {
@@ -32,6 +52,25 @@ export default function Message({ message, isStreaming = false }: MessageProps) 
     if (success) {
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
+    }
+  };
+
+  const handleGeneratePDF = async () => {
+    if (!chatId) {
+      alert('Chat ID nu este disponibil');
+      return;
+    }
+
+    setIsGeneratingPDF(true);
+    try {
+      const blob = await generatePDFFromChat(chatId, sessionId || null, token || undefined);
+      const filename = `document_${chatId}_${Date.now()}.pdf`;
+      downloadBlob(blob, filename);
+    } catch (error) {
+      console.error('Eroare la generarea PDF:', error);
+      alert(error instanceof Error ? error.message : 'Nu s-a putut genera PDF');
+    } finally {
+      setIsGeneratingPDF(false);
     }
   };
 
@@ -104,6 +143,30 @@ export default function Message({ message, isStreaming = false }: MessageProps) 
             {/* Afișează iconurile doar când nu mai este streaming */}
             {!isStreaming && (
               <div className={styles.messageFooter}>
+                {showPDFButton && (
+                  <button
+                    type="button"
+                    className={`${styles.actionBtn} ${isGeneratingPDF ? styles.generating : ''}`}
+                    onClick={handleGeneratePDF}
+                    disabled={isGeneratingPDF}
+                    title="Generează PDF cu datele extrase"
+                  >
+                    {isGeneratingPDF ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={styles.spinning}>
+                        <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M16 13H8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M16 17H8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M10 9H8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`${styles.actionBtn} ${isSpeaking ? styles.speaking : ''}`}
