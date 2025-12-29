@@ -34,7 +34,7 @@ Răspunde DOAR cu titlul, fără explicații sau text suplimentar:"""
     try:
         # Folosește Ollama pentru a genera titlul
         response = ollama.chat(
-            model="gpt-oss:20b",  # Sau alt model disponibil
+            model="qwen2.5:7b",  # Sau alt model disponibil
             messages=[
                 {"role": "user", "content": title_prompt}
             ],

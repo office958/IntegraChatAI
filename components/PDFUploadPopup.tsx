@@ -21,6 +21,7 @@ export default function PDFUploadPopup({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (files && files.length > 0) {
+        let fileAdded = false;
         Array.from(files).forEach((file) => {
           // Check if file is already in the list
           const isDuplicate = existingFiles.some(
@@ -29,8 +30,14 @@ export default function PDFUploadPopup({
           
           if (!isDuplicate) {
             onFileSelect(file);
+            fileAdded = true;
           }
         });
+        
+        // Close modal if at least one file was added
+        if (fileAdded) {
+          onClose();
+        }
       }
       
       // Reset input so the same file can be selected again
@@ -38,7 +45,7 @@ export default function PDFUploadPopup({
         fileInputRef.current.value = '';
       }
     },
-    [onFileSelect, existingFiles]
+    [onFileSelect, existingFiles, onClose]
   );
 
   const handleButtonClick = useCallback(() => {

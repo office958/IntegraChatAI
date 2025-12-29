@@ -127,56 +127,50 @@ async def upload_rag_file(chat_id: str, file: UploadFile = File(...)):
         )
     
     tenant_id = get_tenant_id_from_chat_id(chat_id)
-    rag_dir = f"rag/{chat_id}"
-    os.makedirs(rag_dir, exist_ok=True)
     
-    # Salvează fișierul
-    file_path = os.path.join(rag_dir, file.filename)
+    # Citește fișierul în memorie (nu pe disk)
     try:
-        content = await file.read()
-        print(f"✅ Fișier citit: {len(content)} bytes")
-        with open(file_path, "wb") as f:
-            f.write(content)
-        print(f"✅ Fișier salvat la: {file_path}")
+        file_data = await file.read()
+        print(f"✅ Fișier citit: {len(file_data)} bytes")
     except Exception as e:
-        print(f"❌ Eroare la salvarea fișierului: {e}")
+        print(f"❌ Eroare la citirea fișierului: {e}")
         return JSONResponse(
             status_code=500,
-            content={"error": f"Eroare la salvarea fișierului: {str(e)}"}
+            content={"error": f"Eroare la citirea fișierului: {str(e)}"}
         )
     
-    # Extrage text (similar cu logica din reprocess_rag)
+    # Extrage text din fișierul din memorie
     text_content = ""
     try:
         print(f"📄 Încep extragerea textului din {file.filename}...")
         if file.filename.endswith('.pdf') and PDF_AVAILABLE:
             print(f"📄 Procesare PDF: {file.filename}")
-            with open(file_path, "rb") as pdf_file:
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
-                print(f"📄 PDF are {len(pdf_reader.pages)} pagini")
-                for page_num, page in enumerate(pdf_reader.pages):
-                    try:
-                        page_text = page.extract_text()
-                        if page_text.strip():
-                            text_content += f"\n--- Pagina {page_num + 1} ---\n{page_text}\n"
-                    except Exception as e:
-                        print(f"⚠️ Eroare la extragerea paginii {page_num + 1} din {file.filename}: {e}")
+            import io
+            pdf_file = io.BytesIO(file_data)
+            pdf_reader = PyPDF2.PdfReader(pdf_file)
+            print(f"📄 PDF are {len(pdf_reader.pages)} pagini")
+            for page_num, page in enumerate(pdf_reader.pages):
+                try:
+                    page_text = page.extract_text()
+                    if page_text.strip():
+                        text_content += f"\n--- Pagina {page_num + 1} ---\n{page_text}\n"
+                except Exception as e:
+                    print(f"⚠️ Eroare la extragerea paginii {page_num + 1} din {file.filename}: {e}")
             if not text_content.strip():
                 print(f"⚠️ PDF {file.filename} nu conține text extractibil (poate fi scanat)")
         elif file.filename.endswith(('.txt', '.md')):
             print(f"📄 Procesare text: {file.filename}")
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    text_content = f.read()
+                text_content = file_data.decode('utf-8')
             except UnicodeDecodeError:
                 print(f"⚠️ Eroare encoding UTF-8, încerc latin-1...")
-                with open(file_path, "r", encoding="latin-1") as f:
-                    text_content = f.read()
+                text_content = file_data.decode('latin-1')
         elif file.filename.endswith(('.doc', '.docx')):
             print(f"📄 Procesare DOC/DOCX: {file.filename}")
             try:
                 from docx import Document
-                doc = Document(file_path)
+                import io
+                doc = Document(io.BytesIO(file_data))
                 for para in doc.paragraphs:
                     if para.text.strip():
                         text_content += para.text + "\n"
@@ -210,15 +204,15 @@ async def upload_rag_file(chat_id: str, file: UploadFile = File(...)):
             )
         client_chat_id = db_config.get("id")
     
-    # Adaugă fișierul în baza de date cu conținutul text
+    # Adaugă fișierul în baza de date cu conținutul text și fișierul binar
     if text_content and text_content.strip():
-        # Salvează sau actualizează fișierul în DB cu conținutul
-        add_rag_file(client_chat_id, file.filename, text_content.strip())
-        print(f"✅ Fișier RAG salvat în DB cu conținut: {file.filename} ({len(text_content)} caractere)")
+        # Salvează sau actualizează fișierul în DB cu conținutul text și fișierul binar
+        add_rag_file(client_chat_id, file.filename, text_content.strip(), file_data)
+        print(f"✅ Fișier RAG salvat în DB cu conținut și date: {file.filename} ({len(text_content)} caractere, {len(file_data)} bytes)")
     else:
-        # Dacă nu s-a putut extrage text, salvează doar numele fișierului
-        add_rag_file(client_chat_id, file.filename, None)
-        print(f"⚠️ Nu s-a putut extrage text din {file.filename} (poate fi gol, scanat sau protejat) - salvat doar numele fișierului")
+        # Dacă nu s-a putut extrage text, salvează doar fișierul binar
+        add_rag_file(client_chat_id, file.filename, None, file_data)
+        print(f"⚠️ Nu s-a putut extrage text din {file.filename} (poate fi gol, scanat sau protejat) - salvat doar fișierul binar ({len(file_data)} bytes)")
     
     # Actualizează vector store
     try:
@@ -262,16 +256,8 @@ async def delete_rag_file_endpoint(chat_id: str, filename: str):
     
     tenant_id = get_tenant_id_from_chat_id(chat_id)
     
-    # Șterge fișierul din folder
-    file_path = f"rag/{chat_id}/{filename}"
-    if os.path.exists(file_path):
-        try:
-            os.remove(file_path)
-            print(f"✅ Fișier șters din folder: {file_path}")
-        except Exception as e:
-            print(f"⚠️ Eroare la ștergerea fișierului din folder: {e}")
-    else:
-        print(f"⚠️ Fișier nu există în folder: {file_path}")
+    # Nu mai ștergem fișierul de pe disk - doar din baza de date
+    # (Fișierele sunt acum stocate în baza de date)
     
     # Convertește chat_id la int pentru DB
     try:
@@ -339,7 +325,7 @@ async def create_tenant(request: dict):
     """Creează un nou tenant/client chatbot"""
     try:
         name = request.get("name", "Chat nou")
-        model = request.get("model", "gpt-oss:20b")
+        model = request.get("model", "qwen2.5:7b")
         prompt = request.get("prompt", "Ești asistentul Integra AI. Răspunde clar și politicos la întrebările utilizatorilor.")
         chat_title = request.get("chat_title", name)
         chat_subtitle = request.get("chat_subtitle", "Asistentul tău inteligent pentru găsirea informațiilor")

@@ -79,9 +79,15 @@ def enhance_prompt_for_autofill(base_prompt, page_context=None, pdf_text=None, r
     
     # Adaugă textul din PDF/imagini dacă există (format compact pentru viteză)
     if pdf_text:
-        # Limitează la primele 2000 caractere pentru prompt (optimizare viteză mai agresivă)
-        pdf_text_limited = pdf_text[:2000] if len(pdf_text) > 2000 else pdf_text
-        enhanced += f"\n\n=== DOCUMENT ÎNCĂRCAT DE UTILIZATOR ===\n{pdf_text_limited}\n\nExtrage: nume, adrese, date, numere. Completează câmpurile pe baza acestui document."
+        # Limitează la primele 1500 caractere pentru prompt (optimizare viteză mai agresivă)
+        pdf_text_limited = pdf_text[:1500] if len(pdf_text) > 1500 else pdf_text
+        enhanced += f"\n\n=== DOCUMENT ÎNCĂRCAT ===\n{pdf_text_limited}\n\n"
+        enhanced += "INSTRUCȚIUNI:\n"
+        enhanced += "1. Corectează automat erorile OCR (0→O, 1→I, 5→S, rn→m)\n"
+        enhanced += "2. Identifică datele LIPSĂ și întreabă explicit utilizatorul\n"
+        enhanced += "3. Extrage toate datele prezente (nume, CNP, adrese, date)\n"
+        enhanced += "4. Pentru text suspect, sugerează corecție și cere confirmare\n"
+        enhanced += "5. Când utilizatorul furnizează date manual, confirmă actualizarea\n\n"
         
         # Adaugă instrucțiuni pentru procesare cereri complexe
         enhanced += "\n\n=== PROCESARE CERERI COMPLEXE ==="

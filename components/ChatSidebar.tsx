@@ -37,21 +37,41 @@ export default function ChatSidebar({ isOpen, onToggle, currentChatId, currentSe
 
   // Încarcă sesiunile de chat ale utilizatorului pentru chatbot-ul curent
   useEffect(() => {
+    let isMounted = true;
+    let isLoading = false;
+    let lastErrorTime = 0;
+    
     const loadChatSessions = async () => {
-      if (!currentChatId || !userId) {
-        setChatSessions([]);
+      if (!currentChatId || !userId || isLoading) {
+        return;
+      }
+      
+      // Dacă a existat o eroare recentă, așteaptă mai mult înainte de a reîncerca
+      const timeSinceLastError = Date.now() - lastErrorTime;
+      if (timeSinceLastError < 10000) { // 10 secunde după o eroare
         return;
       }
 
+      isLoading = true;
+      
       try {
         const headers: HeadersInit = {};
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
         
+        // Adaugă timeout pentru a evita request-uri care durează prea mult
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 secunde timeout
+        
         const response = await fetch(`/api/chat/${currentChatId}/sessions`, {
           headers,
+          signal: controller.signal,
         });
+        
+        clearTimeout(timeoutId);
+        
+        if (!isMounted) return;
         
         if (response.ok) {
           const data = await response.json();
@@ -70,25 +90,46 @@ export default function ChatSidebar({ isOpen, onToggle, currentChatId, currentSe
           }));
           
           setChatSessions(sessionHistory);
+          lastErrorTime = 0; // Reset error time on success
         } else if (response.status === 404) {
           // Chat-ul nu există
-          console.error('Chat-ul nu există');
-          setChatSessions([]);
+          if (isMounted) {
+            setChatSessions([]);
+          }
         } else {
-          console.error('Error loading chat sessions:', response.statusText);
+          // Eroare - nu logăm pentru a evita spam în console
+          lastErrorTime = Date.now();
         }
-      } catch (error) {
-        console.error('Error loading chat sessions:', error);
+      } catch (error: any) {
+        if (!isMounted) return;
+        
+        // Ignoră erorile de abort (timeout)
+        if (error.name === 'AbortError') {
+          lastErrorTime = Date.now();
+          return;
+        }
+        
+        // Loghează doar erorile neașteptate
+        if (error.message && !error.message.includes('aborted')) {
+          console.error('Error loading chat sessions:', error);
+        }
+        lastErrorTime = Date.now();
+      } finally {
+        isLoading = false;
       }
     };
 
     loadChatSessions();
     
-    // Reîncarcă sesiunile la fiecare 30 de secunde
-    // Dacă există o sesiune activă, reîncarcă mai des (la 5 secunde) pentru a detecta schimbările de titlu
-    const intervalTime = currentSessionId ? 5000 : 30000;
+    // Reîncarcă sesiunile la fiecare 30 de secunde (mărit de la 5 secunde pentru a reduce load-ul)
+    // Dacă există o sesiune activă, reîncarcă la 15 secunde (nu 5) pentru a reduce request-urile
+    const intervalTime = currentSessionId ? 15000 : 30000;
     const interval = setInterval(loadChatSessions, intervalTime);
-    return () => clearInterval(interval);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [currentChatId, currentSessionId, userId, token]);
 
   // Închide meniul când se face click în afara lui

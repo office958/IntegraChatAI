@@ -22,10 +22,17 @@ export async function extractPDFText(file: File): Promise<string> {
     const formData = new FormData();
     formData.append('pdf', file);
 
-    const response = await fetch(`${BACKEND_URL}/extract-pdf`, {
+    // Creează AbortController pentru timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 secunde
+
+    const response = await fetch(`${BACKEND_URL}/extract-pdf?max_pages=5`, {
       method: 'POST',
       body: formData,
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Eroare necunoscută' }));
@@ -57,7 +64,11 @@ export async function extractPDFText(file: File): Promise<string> {
  * @param file - The image file to extract text from
  * @returns A promise that resolves to the extracted text
  */
-export async function extractImageText(file: File): Promise<string> {
+export async function extractImageText(
+  file: File,
+  correctText: boolean = true,
+  expectedFields?: string[]
+): Promise<{ text: string; correctedText?: string; corrections?: any[]; missingFields?: any[] }> {
   if (!file) {
     throw new Error('Fișierul imagine nu este valid');
   }
@@ -73,6 +84,11 @@ export async function extractImageText(file: File): Promise<string> {
   try {
     const formData = new FormData();
     formData.append('image', file);
+    formData.append('correct_text', correctText.toString());
+
+    if (expectedFields && expectedFields.length > 0) {
+      formData.append('expected_fields', JSON.stringify(expectedFields));
+    }
 
     const response = await fetch(`${BACKEND_URL}/extract-image`, {
       method: 'POST',
@@ -94,7 +110,13 @@ export async function extractImageText(file: File): Promise<string> {
       throw new Error('Nu s-a putut extrage text din imagine. Imaginea poate să nu conțină text sau calitatea este prea slabă.');
     }
 
-    return data.text.trim();
+    // Returnează obiect cu text și informații suplimentare
+    return {
+      text: data.text.trim(),
+      correctedText: data.corrected_text || data.text.trim(),
+      corrections: data.corrections || [],
+      missingFields: data.missing_fields || []
+    };
   } catch (error) {
     console.error('Error extracting image text:', error);
     if (error instanceof Error) {

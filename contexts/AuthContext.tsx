@@ -101,8 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Eroare la autentificare');
+        const error = await response.json().catch(() => ({ error: 'Eroare la autentificare' }));
+        throw new Error(error.error || error.detail || 'Eroare la autentificare');
       }
 
       const data = await response.json();

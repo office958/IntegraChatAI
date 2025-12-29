@@ -5,6 +5,130 @@
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
 /**
+ * Detectează dacă un mesaj conține o cerere pentru descărcarea unui document din RAG
+ * @param message - Conținutul mesajului
+ * @returns Numele fișierului detectat sau null
+ */
+export function detectRAGDocumentRequest(message: string): string | null {
+  if (!message) return null;
+  
+  // Cuvinte cheie pentru cereri de documente RAG
+  const ragKeywords = [
+    'descarcă document',
+    'descarca document',
+    'descarcă fișier',
+    'descarca fisier',
+    'descarcă pdf',
+    'descarca pdf',
+    'download document',
+    'download file',
+    'dă-mi documentul',
+    'da-mi documentul',
+    'trimite documentul',
+    'arătă-mi documentul',
+    'arata-mi documentul',
+    'afișează documentul',
+    'afiseaza documentul'
+  ];
+  
+  const lowerMessage = message.toLowerCase();
+  const hasKeyword = ragKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  if (!hasKeyword) return null;
+  
+  // Încearcă să extragă numele fișierului din mesaj
+  // Caută pattern-uri precum "documentul X" sau "fișierul Y"
+  const patterns = [
+    /(?:documentul|document|fișierul|fisierul|pdf-ul|pdf)\s+([a-zA-Z0-9_\-\.]+\.pdf)/i,
+    /([a-zA-Z0-9_\-\.]+\.pdf)/i,
+    /(?:numit|denumit|cu numele)\s+([a-zA-Z0-9_\-\.]+)/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Listează toate fișierele RAG disponibile pentru un chat
+ * @param chatId - ID-ul chat-ului
+ * @param token - Token de autentificare
+ * @returns Lista de fișiere RAG
+ */
+export async function listRAGFiles(
+  chatId: string,
+  token?: string
+): Promise<Array<{ filename: string; uploaded_at?: string }>> {
+  try {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const response = await fetch(`${BACKEND_URL}/chat/${chatId}/rag-files`, {
+      method: 'GET',
+      headers,
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to list RAG files: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return data.files || [];
+  } catch (error) {
+    console.error('Error listing RAG files:', error);
+    return [];
+  }
+}
+
+/**
+ * Descarcă un fișier RAG
+ * @param chatId - ID-ul chat-ului
+ * @param filename - Numele fișierului de descărcat
+ * @param token - Token de autentificare
+ */
+export async function downloadRAGFile(
+  chatId: string,
+  filename: string,
+  token?: string
+): Promise<void> {
+  try {
+    const headers: HeadersInit = {};
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const response = await fetch(
+      `${BACKEND_URL}/chat/${chatId}/rag-files/download?filename=${encodeURIComponent(filename)}`,
+      {
+        method: 'GET',
+        headers,
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Failed to download RAG file: ${response.statusText}`);
+    }
+    
+    const blob = await response.blob();
+    downloadBlob(blob, filename);
+  } catch (error) {
+    console.error('Error downloading RAG file:', error);
+    throw error;
+  }
+}
+
+/**
  * Detects if a message contains a request for PDF generation
  * @param message - The message content to check
  * @returns true if the message contains PDF generation keywords
@@ -76,7 +200,8 @@ export function extractJSONFromMessage(message: string): any | null {
 export async function generatePDFFromChat(
   chatId: string,
   sessionId: string | null = null,
-  token?: string
+  token?: string,
+  ragFilename?: string | null
 ): Promise<Blob> {
   try {
     const headers: HeadersInit = {
@@ -93,6 +218,11 @@ export async function generatePDFFromChat(
     
     if (sessionId) {
       body.session_id = sessionId;
+    }
+    
+    // Dacă este specificat un fișier RAG, adaugă-l în body
+    if (ragFilename) {
+      body.rag_filename = ragFilename;
     }
     
     // Try the PDF generation endpoint

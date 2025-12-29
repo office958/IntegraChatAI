@@ -32,7 +32,7 @@ def get_cached_config(chat_id: str):
     config = {
         "name": db_config.get("name", "Chat nou"),
         "tenant_id": str(db_config.get("id", chat_id)),
-        "model": db_config.get("model", "gpt-oss:20b"),
+        "model": db_config.get("model", "qwen2.5:7b"),
         "prompt": db_config.get("prompt", ""),
         "chat_title": db_config.get("chat_title"),
         "chat_subtitle": db_config.get("chat_subtitle"),

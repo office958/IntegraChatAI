@@ -227,18 +227,34 @@ async def create_chat(
 
 @router.post("/ask")
 async def ask_default(request: ChatRequest):
-    default_config = {
-        "model": "gpt-oss:20b",
-        "prompt": "Ești asistentul Integra AI. Răspunde clar și politicos."
-    }
+    # Obține config-ul din baza de date dacă există chat_id
+    config = None
+    model = "qwen2.5:7b"  # Default fallback
+    prompt = "Ești asistentul Integra AI. Răspunde clar și politicos."
+    
+    if request.chat_id:
+        # Obține config-ul din cache/baza de date
+        config = get_cached_config(request.chat_id)
+        if config:
+            model = config.get("model", model)
+            prompt = config.get("prompt", prompt)
+    else:
+        # Dacă nu există chat_id, folosește config default
+        # Poți adăuga logică pentru a obține primul chat disponibil sau un chat default
+        print("⚠️ Nu s-a furnizat chat_id în request, folosesc config default")
 
     messages = [
-        {"role": "system", "content": default_config["prompt"]},
+        {"role": "system", "content": prompt},
         {"role": "user", "content": request.message}
     ]
 
+    # Extrage conținutul RAG din config dacă există
+    rag_content = config.get("rag_content", []) if config else []
+    institution_data = config.get("institution") if config else None
+    tenant_id = config.get("tenant_id") if config else None
+
     return StreamingResponse(
-        stream_response(messages, default_config["model"], request.page_context, request.pdf_text, None, None, None, None),
+        stream_response(messages, model, request.page_context, request.pdf_text, rag_content, institution_data, None, tenant_id),
         media_type="text/plain; charset=utf-8"
     )
 

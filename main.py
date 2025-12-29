@@ -5,25 +5,30 @@ from fastapi.exceptions import RequestValidationError
 import traceback
 
 # Importă router-urile
-from routers import auth, chat, admin, files, static
+from routers import auth, chat, admin, files, static, ocr
 
 # Importă router PDF (opțional - doar dacă reportlab este disponibil)
-try:
-    from routers import pdf_generator
-    PDF_GENERATOR_AVAILABLE = True
-except ImportError:
-    PDF_GENERATOR_AVAILABLE = False
-    print("⚠️ Router PDF nu este disponibil. Asigură-te că reportlab este instalat.")
+# Comentat pentru că router-urile nu există încă
+# try:
+#     from routers import pdf_generator
+#     PDF_GENERATOR_AVAILABLE = True
+# except ImportError:
+#     PDF_GENERATOR_AVAILABLE = False
+PDF_GENERATOR_AVAILABLE = False
 
 # Importă router PDF Form (sistem avansat pentru completare PDF)
-try:
-    from routers import pdf_form
-    PDF_FORM_AVAILABLE = True
-except ImportError:
-    PDF_FORM_AVAILABLE = False
-    print("⚠️ Router PDF Form nu este disponibil.")
+# Comentat pentru că router-urile nu există încă
+# try:
+#     from routers import pdf_form
+#     PDF_FORM_AVAILABLE = True
+# except ImportError:
+#     PDF_FORM_AVAILABLE = False
+PDF_FORM_AVAILABLE = False
 
 app = FastAPI(title="Integra AI Builder")
+
+# OCRProcessor se va încărca automat la primul request care necesită OCR (lazy loading)
+# Nu mai pre-încărcăm la start-up pentru a accelera pornirea serverului
 
 # Exception handler global pentru a returna erori ca JSON
 @app.exception_handler(Exception)
@@ -67,6 +72,7 @@ app.include_router(chat.router)
 app.include_router(admin.router)
 app.include_router(files.router)
 app.include_router(static.router)
+app.include_router(ocr.router)
 
 # Înregistrează router PDF dacă este disponibil
 if PDF_GENERATOR_AVAILABLE:
@@ -83,6 +89,7 @@ if __name__ == "__main__":
         app, 
         host="0.0.0.0", 
         port=8000,
-        timeout_keep_alive=75,  # Timeout mai mare pentru procesare OCR
+        timeout_keep_alive=120,  # Timeout mai mare pentru procesare OCR (2 minute)
+        timeout_graceful_shutdown=30,  # Timp pentru închidere grațioasă
         log_level="info"
     )

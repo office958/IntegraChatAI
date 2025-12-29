@@ -130,7 +130,7 @@ def create_default_config(chat_id: str):
     # Creează în baza de date
     chat_id_int = create_client_chat(
         name="Chat nou",
-        model="gpt-oss:20b",
+        model="qwen2.5:7b",
         prompt="Ești asistentul Integra AI. Răspunde clar și politicos la întrebările utilizatorilor.",
         chat_title="Chat nou",
         chat_subtitle="Asistentul tău inteligent pentru găsirea informațiilor",

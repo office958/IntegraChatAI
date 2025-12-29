@@ -48,7 +48,7 @@ export interface MessageType {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  files?: Array<{ filename: string; type: 'pdf' | 'image' }>;
+  files?: Array<{ filename: string; type: 'pdf' | 'image'; url?: string; generated?: boolean }>;
 }
 
 export interface PDFFile {

@@ -14,7 +14,7 @@ DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
     'port': int(os.getenv('DB_PORT', 3306)),
     'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', ''),
+    'password': os.getenv('DB_PASSWORD', 'root'),
     'database': os.getenv('DB_NAME', 'Integra_chat_ai'),
     'charset': 'utf8mb4',
     'collation': 'utf8mb4_unicode_ci',
@@ -281,7 +281,7 @@ def create_or_update_client_type(client_chat_id: int, name: str, type: str,
 
 # ==================== OPERAȚII PE TABELUL rag_file ====================
 
-def get_rag_files(client_chat_id: int, include_content: bool = False) -> List[Dict[str, Any]]:
+def get_rag_files(client_chat_id: int, include_content: bool = False, include_file_data: bool = False) -> List[Dict[str, Any]]:
     """Obține toate fișierele RAG pentru un chatbot"""
     connection = None
     try:
@@ -289,11 +289,27 @@ def get_rag_files(client_chat_id: int, include_content: bool = False) -> List[Di
         cursor = connection.cursor(dictionary=True)
         
         # Selectează doar câmpurile necesare (exclude content dacă nu e necesar pentru performanță)
-        if include_content:
-            query = "SELECT id, file, content, id_client_chat, uploaded_at FROM rag_file WHERE id_client_chat = %s ORDER BY uploaded_at DESC"
-        else:
-            query = "SELECT id, file, id_client_chat, uploaded_at, CASE WHEN content IS NOT NULL THEN 1 ELSE 0 END as has_content FROM rag_file WHERE id_client_chat = %s ORDER BY uploaded_at DESC"
+        # Verifică mai întâi dacă câmpul file_data există
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = DATABASE() 
+              AND TABLE_NAME = 'rag_file' 
+              AND COLUMN_NAME = 'file_data'
+        """)
+        has_file_data_column = cursor.fetchone()['count'] > 0
         
+        fields = ["id", "file", "id_client_chat", "uploaded_at"]
+        if include_content:
+            fields.append("content")
+        if include_file_data and has_file_data_column:
+            fields.append("file_data")
+        if not include_content and not include_file_data:
+            fields.append("CASE WHEN content IS NOT NULL THEN 1 ELSE 0 END as has_content")
+            if has_file_data_column:
+                fields.append("CASE WHEN file_data IS NOT NULL THEN 1 ELSE 0 END as has_file_data")
+        
+        query = f"SELECT {', '.join(fields)} FROM rag_file WHERE id_client_chat = %s ORDER BY uploaded_at DESC"
         cursor.execute(query, (client_chat_id,))
         results = cursor.fetchall()
         
@@ -305,10 +321,16 @@ def get_rag_files(client_chat_id: int, include_content: bool = False) -> List[Di
         return results
     except Error as e:
         print(f"❌ Eroare la citirea rag_file: {e}")
-        # Dacă câmpul content nu există încă, încercă fără el
-        if "Unknown column 'content'" in str(e):
+        # Dacă câmpul content sau file_data nu există încă, încercă fără el
+        if "Unknown column" in str(e):
             try:
-                query = "SELECT id, file, id_client_chat, uploaded_at FROM rag_file WHERE id_client_chat = %s ORDER BY uploaded_at DESC"
+                # Încearcă fără file_data
+                fields = ["id", "file", "id_client_chat", "uploaded_at"]
+                if include_content:
+                    fields.append("content")
+                if not include_content:
+                    fields.append("CASE WHEN content IS NOT NULL THEN 1 ELSE 0 END as has_content")
+                query = f"SELECT {', '.join(fields)} FROM rag_file WHERE id_client_chat = %s ORDER BY uploaded_at DESC"
                 cursor.execute(query, (client_chat_id,))
                 results = cursor.fetchall()
                 for result in results:
@@ -323,8 +345,8 @@ def get_rag_files(client_chat_id: int, include_content: bool = False) -> List[Di
             cursor.close()
             connection.close()
 
-def add_rag_file(client_chat_id: int, filename: str, content: str = None) -> Optional[int]:
-    """Adaugă un fișier RAG în baza de date cu conținutul text"""
+def add_rag_file(client_chat_id: int, filename: str, content: str = None, file_data: bytes = None) -> Optional[int]:
+    """Adaugă un fișier RAG în baza de date cu conținutul text și fișierul binar"""
     connection = None
     try:
         connection = get_db_connection()
@@ -337,18 +359,37 @@ def add_rag_file(client_chat_id: int, filename: str, content: str = None) -> Opt
         
         if existing:
             # Actualizează fișierul existent
+            updates = []
+            params = []
+            
             if content is not None:
-                query = "UPDATE rag_file SET content = %s WHERE id = %s"
-                cursor.execute(query, (content, existing[0]))
+                updates.append("content = %s")
+                params.append(content)
+            
+            if file_data is not None:
+                updates.append("file_data = %s")
+                params.append(file_data)
+            
+            if updates:
+                params.append(existing[0])
+                query = f"UPDATE rag_file SET {', '.join(updates)}, uploaded_at = CURRENT_TIMESTAMP WHERE id = %s"
+                cursor.execute(query, tuple(params))
             else:
-                # Dacă nu avem conținut, doar actualizăm uploaded_at
+                # Dacă nu avem conținut sau date, doar actualizăm uploaded_at
                 query = "UPDATE rag_file SET uploaded_at = CURRENT_TIMESTAMP WHERE id = %s"
                 cursor.execute(query, (existing[0],))
             file_id = existing[0]
             print(f"✅ Fișier RAG actualizat în DB: {filename} (ID: {file_id})")
         else:
             # Creează fișier nou
-            if content is not None:
+            if file_data is not None:
+                if content is not None:
+                    query = "INSERT INTO rag_file (file, content, file_data, id_client_chat) VALUES (%s, %s, %s, %s)"
+                    cursor.execute(query, (filename, content, file_data, client_chat_id))
+                else:
+                    query = "INSERT INTO rag_file (file, file_data, id_client_chat) VALUES (%s, %s, %s)"
+                    cursor.execute(query, (filename, file_data, client_chat_id))
+            elif content is not None:
                 query = "INSERT INTO rag_file (file, content, id_client_chat) VALUES (%s, %s, %s)"
                 cursor.execute(query, (filename, content, client_chat_id))
             else:
@@ -361,6 +402,29 @@ def add_rag_file(client_chat_id: int, filename: str, content: str = None) -> Opt
         return file_id
     except Error as e:
         print(f"❌ Eroare la adăugarea rag_file: {e}")
+        # Dacă câmpul file_data nu există, încercă fără el
+        if "Unknown column 'file_data'" in str(e):
+            try:
+                if existing:
+                    if content is not None:
+                        query = "UPDATE rag_file SET content = %s WHERE id = %s"
+                        cursor.execute(query, (content, existing[0]))
+                    else:
+                        query = "UPDATE rag_file SET uploaded_at = CURRENT_TIMESTAMP WHERE id = %s"
+                        cursor.execute(query, (existing[0],))
+                else:
+                    if content is not None:
+                        query = "INSERT INTO rag_file (file, content, id_client_chat) VALUES (%s, %s, %s)"
+                        cursor.execute(query, (filename, content, client_chat_id))
+                    else:
+                        query = "INSERT INTO rag_file (file, id_client_chat) VALUES (%s, %s)"
+                        cursor.execute(query, (filename, client_chat_id))
+                    file_id = cursor.lastrowid
+                connection.commit()
+                print(f"⚠️ Fișier RAG salvat fără file_data (câmp inexistent): {filename}")
+                return file_id if not existing else existing[0]
+            except:
+                pass
         if connection:
             connection.rollback()
         return None
@@ -591,14 +655,32 @@ def get_conversation_history(chat_id: str = None, session_id: int = None, user_i
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
         
+        # Verifică dacă coloana file_info există
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_SCHEMA = DATABASE() 
+              AND TABLE_NAME = 'user_chat_id' 
+              AND COLUMN_NAME = 'file_info'
+        """)
+        has_file_info = cursor.fetchone()['count'] > 0
+        
         # Dacă avem session_id, folosim sesiunea (mod nou)
         if session_id:
-            query = """
-                SELECT role, content, created_at 
-                FROM user_chat_id 
-                WHERE id_chat_session = %s 
-                ORDER BY created_at ASC
-            """
+            if has_file_info:
+                query = """
+                    SELECT role, content, created_at, file_info
+                    FROM user_chat_id 
+                    WHERE id_chat_session = %s 
+                    ORDER BY created_at ASC
+                """
+            else:
+                query = """
+                    SELECT role, content, created_at
+                    FROM user_chat_id 
+                    WHERE id_chat_session = %s 
+                    ORDER BY created_at ASC
+                """
             cursor.execute(query, (session_id,))
         # Dacă avem chat_id, folosim modul vechi (compatibilitate)
         elif chat_id:
@@ -614,21 +696,37 @@ def get_conversation_history(chat_id: str = None, session_id: int = None, user_i
                 client_chat_id = result['id']
             
             if user_id:
-                query = """
-                    SELECT role, content, created_at 
-                    FROM user_chat_id 
-                    WHERE id_client_chat = %s AND user_id = %s 
-                    ORDER BY created_at ASC
-                """
+                if has_file_info:
+                    query = """
+                        SELECT role, content, created_at, file_info
+                        FROM user_chat_id 
+                        WHERE id_client_chat = %s AND user_id = %s 
+                        ORDER BY created_at ASC
+                    """
+                else:
+                    query = """
+                        SELECT role, content, created_at
+                        FROM user_chat_id 
+                        WHERE id_client_chat = %s AND user_id = %s 
+                        ORDER BY created_at ASC
+                    """
                 cursor.execute(query, (client_chat_id, user_id))
             else:
                 # Dacă nu avem user_id, luăm toate mesajele pentru acest chat
-                query = """
-                    SELECT role, content, created_at 
-                    FROM user_chat_id 
-                    WHERE id_client_chat = %s 
-                    ORDER BY created_at ASC
-                """
+                if has_file_info:
+                    query = """
+                        SELECT role, content, created_at, file_info
+                        FROM user_chat_id 
+                        WHERE id_client_chat = %s 
+                        ORDER BY created_at ASC
+                    """
+                else:
+                    query = """
+                        SELECT role, content, created_at
+                        FROM user_chat_id 
+                        WHERE id_client_chat = %s 
+                        ORDER BY created_at ASC
+                    """
                 cursor.execute(query, (client_chat_id,))
         else:
             return []
@@ -638,10 +736,32 @@ def get_conversation_history(chat_id: str = None, session_id: int = None, user_i
         # Convertește la formatul așteptat
         messages = []
         for result in results:
-            messages.append({
+            message = {
                 "role": result['role'],
                 "content": result['content']
-            })
+            }
+            
+            # Adaugă file_info dacă există
+            if has_file_info:
+                file_info_value = result.get('file_info')
+                if file_info_value:
+                    try:
+                        # Parsează JSON dacă este string
+                        if isinstance(file_info_value, str):
+                            # Verifică dacă string-ul nu este gol
+                            if file_info_value.strip():
+                                message['file_info'] = json.loads(file_info_value)
+                            else:
+                                message['file_info'] = None
+                        else:
+                            message['file_info'] = file_info_value
+                    except (json.JSONDecodeError, TypeError) as e:
+                        print(f"⚠️ Eroare la parsarea file_info: {e}, valoare: {file_info_value}")
+                        message['file_info'] = None
+                else:
+                    message['file_info'] = None
+            
+            messages.append(message)
         
         return messages
     except Error as e:
@@ -655,12 +775,57 @@ def get_conversation_history(chat_id: str = None, session_id: int = None, user_i
             cursor.close()
             connection.close()
 
-def add_message_to_conversation(session_id: int = None, chat_id: str = None, role: str = None, content: str = None, user_id: int = None) -> bool:
-    """Adaugă un mesaj în conversație (folosește session_id dacă este disponibil, altfel chat_id pentru compatibilitate)"""
+def add_message_to_conversation(session_id: int = None, chat_id: str = None, role: str = None, content: str = None, user_id: int = None, file_info: dict = None) -> bool:
+    print("=" * 80)
+    print("🔍 DEBUG add_message_to_conversation - ÎNCEPUT")
+    print("=" * 80)
+    print(f"  - session_id: {session_id}")
+    print(f"  - chat_id: {chat_id}")
+    print(f"  - role: {role}")
+    print(f"  - content length: {len(content) if content else 0}")
+    print(f"  - user_id: {user_id}")
+    print(f"  - file_info: {file_info}")
+    print(f"  - file_info type: {type(file_info)}")
+    if file_info:
+        print(f"  - file_info keys: {file_info.keys() if isinstance(file_info, dict) else 'N/A'}")
+        print(f"  - file_info content: {json.dumps(file_info, ensure_ascii=False, indent=2)[:500]}")
+    """Adaugă un mesaj în conversație (folosește session_id dacă este disponibil, altfel chat_id pentru compatibilitate)
+    
+    Args:
+        session_id: ID-ul sesiunii de chat
+        chat_id: ID-ul chat-ului (pentru compatibilitate)
+        role: Rolul mesajului ('user' sau 'assistant')
+        content: Conținutul mesajului
+        user_id: ID-ul utilizatorului
+        file_info: Dicționar cu informații despre fișierele atașate (JSON)
+    """
     connection = None
     try:
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
+        
+        # Convertește file_info la JSON string dacă există
+        file_info_json = None
+        print(f"🔍 Procesare file_info:")
+        print(f"  - file_info este None: {file_info is None}")
+        print(f"  - file_info este dict: {isinstance(file_info, dict)}")
+        print(f"  - file_info este list: {isinstance(file_info, list)}")
+        
+        if file_info:
+            try:
+                print(f"  - Încearcă serializarea file_info...")
+                file_info_json = json.dumps(file_info, ensure_ascii=False)
+                print(f"✅ file_info serializat cu succes!")
+                print(f"  - JSON length: {len(file_info_json)}")
+                print(f"  - JSON preview: {file_info_json[:300]}...")
+            except Exception as e:
+                print(f"❌ EROARE la serializarea file_info:")
+                print(f"  - Error: {e}")
+                print(f"  - file_info type: {type(file_info)}")
+                print(f"  - file_info value: {file_info}")
+                file_info_json = None
+        else:
+            print(f"⚠️ file_info este None sau gol, nu se salvează")
         
         # Dacă avem session_id, folosim sesiunea (mod nou)
         if session_id:
@@ -679,14 +844,51 @@ def add_message_to_conversation(session_id: int = None, chat_id: str = None, rol
             
             id_client_chat = session_data.get('id_client_chat')
             
+            # Verifică dacă coloana file_info există
+            print(f"🔍 Verificare coloană file_info în baza de date...")
+            cursor.execute("""
+                SELECT COUNT(*) as count 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                  AND TABLE_NAME = 'user_chat_id' 
+                  AND COLUMN_NAME = 'file_info'
+            """)
+            has_file_info = cursor.fetchone()['count'] > 0
+            print(f"  - Coloana file_info există: {has_file_info}")
+            
             # Inserează mesajul cu atât session_id cât și id_client_chat pentru consistență
-            query = """
-                INSERT INTO user_chat_id (role, content, user_id, id_chat_session, id_client_chat)
-                VALUES (%s, %s, %s, %s, %s)
-            """
-            cursor.execute(query, (role, content, user_id, session_id, id_client_chat))
+            if has_file_info:
+                print(f"✅ Coloana file_info există, inserez cu file_info")
+                query = """
+                    INSERT INTO user_chat_id (role, content, user_id, id_chat_session, id_client_chat, file_info)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                print(f"  - Query: {query}")
+                print(f"  - Params: role={role}, content_length={len(content) if content else 0}, user_id={user_id}, session_id={session_id}, id_client_chat={id_client_chat}, file_info_json={'DA' if file_info_json else 'NULL'}")
+                cursor.execute(query, (role, content, user_id, session_id, id_client_chat, file_info_json))
+                print(f"✅ INSERT executat cu succes!")
+            else:
+                print(f"⚠️ Coloana file_info NU există, inserez fără file_info")
+                query = """
+                    INSERT INTO user_chat_id (role, content, user_id, id_chat_session, id_client_chat)
+                    VALUES (%s, %s, %s, %s, %s)
+                """
+                print(f"  - Query: {query}")
+                cursor.execute(query, (role, content, user_id, session_id, id_client_chat))
+                print(f"✅ INSERT executat (fără file_info)!")
+            
             connection.commit()
-            print(f"✅ Mesaj salvat în DB: role={role}, user_id={user_id}, session_id={session_id}, chat_id={id_client_chat}, content_length={len(content) if content else 0}")
+            print(f"✅ COMMIT executat cu succes!")
+            print(f"✅ Mesaj salvat în DB:")
+            print(f"  - role: {role}")
+            print(f"  - user_id: {user_id}")
+            print(f"  - session_id: {session_id}")
+            print(f"  - chat_id: {id_client_chat}")
+            print(f"  - content_length: {len(content) if content else 0}")
+            print(f"  - file_info: {'DA' if file_info else 'NU'}")
+            if file_info_json:
+                print(f"  - file_info_json length: {len(file_info_json)}")
+            print("=" * 80)
             
             # Actualizează updated_at pentru sesiune
             update_chat_session(session_id, None)
@@ -708,13 +910,31 @@ def add_message_to_conversation(session_id: int = None, chat_id: str = None, rol
             if user_id is None:
                 user_id = 0  # User anonim sau default
             
-            query = """
-                INSERT INTO user_chat_id (role, content, user_id, id_client_chat)
-                VALUES (%s, %s, %s, %s)
-            """
-            cursor.execute(query, (role, content, user_id, client_chat_id))
+            # Verifică dacă coloana file_info există
+            cursor.execute("""
+                SELECT COUNT(*) as count 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                  AND TABLE_NAME = 'user_chat_id' 
+                  AND COLUMN_NAME = 'file_info'
+            """)
+            has_file_info = cursor.fetchone()['count'] > 0
+            
+            if has_file_info:
+                query = """
+                    INSERT INTO user_chat_id (role, content, user_id, id_client_chat, file_info)
+                    VALUES (%s, %s, %s, %s, %s)
+                """
+                cursor.execute(query, (role, content, user_id, client_chat_id, file_info_json))
+            else:
+                query = """
+                    INSERT INTO user_chat_id (role, content, user_id, id_client_chat)
+                    VALUES (%s, %s, %s, %s)
+                """
+                cursor.execute(query, (role, content, user_id, client_chat_id))
+            
             connection.commit()
-            print(f"✅ Mesaj salvat în DB: role={role}, user_id={user_id}, chat_id={client_chat_id}, content_length={len(content) if content else 0}")
+            print(f"✅ Mesaj salvat în DB: role={role}, user_id={user_id}, chat_id={client_chat_id}, content_length={len(content) if content else 0}, file_info={'da' if file_info else 'nu'}")
         else:
             print(f"❌ Trebuie să furnizezi fie session_id, fie chat_id")
             return False

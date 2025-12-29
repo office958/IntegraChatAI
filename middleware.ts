@@ -10,6 +10,15 @@ const protectedRoutes = ['/chat', '/admin', '/settings'];
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
+  // Exclude endpoint-urile API ale chat-ului (trebuie să treacă prin proxy)
+  const chatApiEndpoints = ['/sessions', '/history', '/config', '/ask', '/clear', '/session'];
+  const isChatApiEndpoint = pathname.match(/^\/chat\/[^/]+\/(sessions|history|config|ask|clear|session)/);
+  
+  if (isChatApiEndpoint) {
+    // Lasă request-urile API să treacă prin proxy fără interceptare
+    return NextResponse.next();
+  }
+  
   // Verifică dacă este o rută publică
   const isPublicRoute = publicRoutes.some(route => pathname.startsWith(route));
   
@@ -56,8 +65,9 @@ export const config = {
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public files (images, etc.)
+     * - chat API endpoints (sessions, history, ask, config, etc.)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|chat/[^/]+/sessions|chat/[^/]+/history|chat/[^/]+/config|chat/[^/]+/ask|chat/[^/]+/clear|chat/[^/]+/session|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
 

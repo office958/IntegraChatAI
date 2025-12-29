@@ -103,22 +103,19 @@ body::-webkit-scrollbar-thumb:hover {
 
 .message-numbered-list li {
   padding: 8px 0;
-  padding-left: 24px;
+  padding-left: 32px;
   position: relative;
   color: #374151;
+  line-height: 1.6;
 }
 
 .message-numbered-list li::before {
-  content: counter(list-item) '.';
-  counter-increment: list-item;
+  content: attr(data-number) '.';
   position: absolute;
   left: 0;
   font-weight: 600;
   color: var(--primary-color);
-}
-
-.message-numbered-list {
-  counter-reset: list-item;
+  min-width: 24px;
 }
 
 /* Stiluri pentru date structurate */

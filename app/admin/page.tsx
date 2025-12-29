@@ -56,7 +56,7 @@ export default function AdminPanel() {
   });
   const [configData, setConfigData] = useState({
     name: '',
-    model: 'gpt-oss:20b',
+    model: 'qwen2.5:7b',
     prompt: '',
     chat_title: '',
     chat_subtitle: '',
@@ -66,7 +66,7 @@ export default function AdminPanel() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newTenantData, setNewTenantData] = useState({
     name: '',
-    model: 'gpt-oss:20b',
+    model: 'qwen2.5:7b',
     prompt: 'Ești asistentul Integra AI. Răspunde clar și politicos la întrebările utilizatorilor.',
     chat_title: '',
     chat_subtitle: 'Asistentul tău inteligent pentru găsirea informațiilor',
@@ -283,7 +283,7 @@ export default function AdminPanel() {
         setShowCreateForm(false);
         setNewTenantData({
           name: '',
-          model: 'gpt-oss:20b',
+          model: 'qwen2.5:7b',
           prompt: 'Ești asistentul Integra AI. Răspunde clar și politicos la întrebările utilizatorilor.',
           chat_title: '',
           chat_subtitle: 'Asistentul tău inteligent pentru găsirea informațiilor',
@@ -674,7 +674,7 @@ export default function AdminPanel() {
                   type="text"
                   value={newTenantData.model}
                   onChange={(e) => setNewTenantData({ ...newTenantData, model: e.target.value })}
-                  placeholder="ex: gpt-oss:20b"
+                  placeholder="ex: qwen2.5:7b"
                 />
               </div>
               <div className={styles.formGroup}>

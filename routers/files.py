@@ -1,10 +1,26 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Form, Query
 from fastapi.responses import JSONResponse
+from typing import Optional
 import io
 from core.config import PDF_AVAILABLE, OCR_AVAILABLE
 import PyPDF2
 from PIL import Image
 import pytesseract
+
+# Importă OCR-ul nou cu PaddleOCR
+try:
+    from ocr_processor.processor import process_image, process_pdf, PADDLEOCR_AVAILABLE, OPENCV_AVAILABLE
+    from ocr_processor.postprocess import correct_ocr_text, identify_missing_fields
+    PADDLEOCR_AVAILABLE_IMPORT = PADDLEOCR_AVAILABLE and OPENCV_AVAILABLE
+except ImportError:
+    PADDLEOCR_AVAILABLE_IMPORT = False
+    process_pdf = None
+    # Importă funcțiile de post-procesare dacă sunt disponibile
+    try:
+        from ocr_processor.postprocess import correct_ocr_text, identify_missing_fields
+    except ImportError:
+        correct_ocr_text = None
+        identify_missing_fields = None
 
 router = APIRouter(tags=["files"])
 
@@ -19,10 +35,17 @@ if PDF2IMAGE_AVAILABLE:
         PDF2IMAGE_AVAILABLE = False
 
 @router.post("/extract-pdf")
-async def extract_pdf(pdf: UploadFile = File(...)):
+async def extract_pdf(
+    pdf: UploadFile = File(...), 
+    max_pages: int = Query(5, ge=1, le=10, description="Numărul maxim de pagini de procesat (1-10, default: 5)")
+):
     """
     Extrage textul dintr-un fișier PDF.
     Dacă PDF-ul este scanat (fără text extractibil), folosește OCR ca fallback.
+    
+    Args:
+        pdf: Fișierul PDF
+        max_pages: Numărul maxim de pagini de procesat (default: 10, pentru a evita timeout-uri)
     """
     if not PDF_AVAILABLE:
         return JSONResponse(
@@ -51,7 +74,11 @@ async def extract_pdf(pdf: UploadFile = File(...)):
         text = ""
         extracted_pages = 0
         
-        for page_num, page in enumerate(pdf_reader.pages):
+        # Limitează numărul de pagini pentru a evita timeout-uri
+        total_pages = len(pdf_reader.pages)
+        pages_to_process = min(total_pages, max_pages)
+        
+        for page_num, page in enumerate(pdf_reader.pages[:pages_to_process]):
             try:
                 page_text = page.extract_text()
                 if page_text and page_text.strip():
@@ -62,23 +89,111 @@ async def extract_pdf(pdf: UploadFile = File(...)):
                 print(f"⚠️ Eroare la extragerea paginii {page_num + 1}: {e}")
                 continue
         
+        # Adaugă notă dacă au fost omise pagini
+        if total_pages > max_pages and extracted_pages > 0:
+            text += f"\n\n[Notă: Doar primele {max_pages} pagini au fost procesate din {total_pages} totale]"
+        
         # Dacă nu s-a extras text sau s-a extras foarte puțin, încercă OCR (dacă este disponibil)
         if not text.strip() or (extracted_pages == 0 and len(pdf_reader.pages) > 0):
             print(f"📄 PDF pare să fie scanat (fără text extractibil). Încerc OCR...")
-            
-            if not OCR_AVAILABLE:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "error": "Nu s-a putut extrage text din PDF. PDF-ul pare să fie scanat. Pentru a procesa PDF-uri scanate, instalează OCR: pip install pytesseract pillow pdf2image și Tesseract OCR."
-                    }
-                )
             
             if not PDF2IMAGE_AVAILABLE:
                 return JSONResponse(
                     status_code=400,
                     content={
                         "error": "Nu s-a putut extrage text din PDF. PDF-ul pare să fie scanat. Pentru a procesa PDF-uri scanate, instalează: pip install pdf2image și poppler (Windows: https://github.com/oschwartz10612/poppler-windows/releases, Linux: sudo apt-get install poppler-utils, macOS: brew install poppler)"
+                    }
+                )
+            
+            # Preferă PaddleOCR dacă este disponibil, altfel folosește Tesseract
+            if PADDLEOCR_AVAILABLE_IMPORT and process_pdf:
+                print(f"📄 Folosesc PaddleOCR pentru extragere text din PDF scanat (max {max_pages} pagini)...")
+                try:
+                    # Rulează conversia PDF->imagini în thread pool pentru a nu bloca event loop-ul
+                    import asyncio
+                    loop = asyncio.get_event_loop()
+                    # Convertește doar primele max_pages pagini pentru viteză maximă
+                    # Folosim DPI mai mic (150) pentru viteză mai mare
+                    images = await loop.run_in_executor(
+                        None,
+                        lambda: convert_from_bytes(pdf_content, dpi=150)
+                    )
+                    
+                    if not images:
+                        print(f"⚠️ Nu s-au putut converti paginile PDF, încerc cu Tesseract...")
+                    else:
+                        # Limitează la primele max_pages pagini
+                        total_pages = len(images)
+                        images_to_process = images[:max_pages]
+                        
+                        ocr_text = ""
+                        processor = None
+                        
+                        # Folosește singleton pentru a evita reinițializarea modelelor
+                        try:
+                            from ocr_processor.singleton import get_ocr_processor
+                            processor = get_ocr_processor(lang='ro')
+                            if not processor:
+                                raise Exception("OCRProcessor nu este disponibil")
+                        except Exception as e:
+                            print(f"⚠️ Eroare la obținerea OCRProcessor: {e}")
+                            raise
+                        
+                        # Procesează fiecare pagină asincron (limitează la max_pages pentru viteză)
+                        pages_processed = 0
+                        for page_num, pil_image in enumerate(images_to_process):
+                            if pages_processed >= max_pages:
+                                break
+                            
+                            # Rulează procesarea în thread pool pentru a nu bloca
+                            try:
+                                page_text, _ = await loop.run_in_executor(
+                                    None,
+                                    lambda img=pil_image: processor.process_pil_image(img, return_boxes=False)
+                                )
+                                
+                                if page_text and page_text.strip():
+                                    ocr_text += f"\n--- Pagina {page_num + 1} ---\n"
+                                    ocr_text += page_text
+                                    pages_processed += 1
+                                    print(f"✅ Text extras din pagina {page_num + 1} cu PaddleOCR: {len(page_text)} caractere")
+                            except Exception as page_error:
+                                import traceback
+                                print(f"⚠️ Eroare la extragerea paginii {page_num + 1} cu PaddleOCR: {traceback.format_exc()}")
+                                continue
+                        
+                        # Adaugă notă dacă au fost omise pagini
+                        if total_pages > max_pages:
+                            ocr_text += f"\n\n[Notă: Doar primele {pages_processed} pagini au fost procesate din {total_pages} totale]"
+                        
+                        if ocr_text.strip():
+                            # Limitează textul la 50000 caractere pentru a evita timeout-uri
+                            final_text = ocr_text.strip()
+                            if len(final_text) > 50000:
+                                final_text = final_text[:50000] + "\n\n[... text trunchiat pentru a evita timeout-uri ...]"
+                            
+                            return JSONResponse(content={
+                                "text": final_text,
+                                "filename": pdf.filename,
+                                "type": "pdf",
+                                "method": "paddleocr",
+                                "pages": pages_processed,
+                                "total_pages": total_pages,
+                                "truncated": len(ocr_text.strip()) > 50000
+                            })
+                        else:
+                            print(f"⚠️ PaddleOCR nu a extras text, încerc cu Tesseract...")
+                except Exception as paddle_error:
+                    import traceback
+                    print(f"⚠️ Eroare la PaddleOCR pentru PDF: {traceback.format_exc()}")
+                    print(f"⚠️ Încerc cu Tesseract ca fallback...")
+            
+            # Fallback la Tesseract dacă PaddleOCR nu este disponibil sau a eșuat
+            if not OCR_AVAILABLE:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": "Nu s-a putut extrage text din PDF. PDF-ul pare să fie scanat. Pentru a procesa PDF-uri scanate, instalează OCR: pip install pytesseract pillow pdf2image și Tesseract OCR."
                     }
                 )
             
@@ -95,23 +210,41 @@ async def extract_pdf(pdf: UploadFile = File(...)):
             
             # Convertește PDF-ul în imagini și extrage text cu OCR
             try:
-                # Încearcă conversia PDF -> imagini
-                # Notă: poppler trebuie să fie instalat pe sistem pentru ca aceasta să funcționeze
-                images = convert_from_bytes(pdf_content, dpi=300)
+                # Rulează conversia PDF->imagini în thread pool pentru a nu bloca event loop-ul
+                import asyncio
+                loop = asyncio.get_event_loop()
+                # Reduce DPI-ul la 150 pentru viteză mai mare
+                images = await loop.run_in_executor(
+                    None,
+                    lambda: convert_from_bytes(pdf_content, dpi=150)
+                )
+                
+                # Limitează la primele max_pages pagini
+                total_pages = len(images)
+                images_to_process = images[:max_pages]
+                
                 ocr_text = ""
                 
-                for page_num, img in enumerate(images):
+                for page_num, img in enumerate(images_to_process):
                     try:
                         # Încearcă cu diferite configurații de limbi
                         page_ocr_text = None
                         lang_configs = ['ron+eng', 'eng', 'ron', None]
                         
+                        # Rulează OCR-ul în thread pool pentru a nu bloca event loop-ul
+                        loop = asyncio.get_event_loop()
                         for lang_config in lang_configs:
                             try:
                                 if lang_config:
-                                    page_ocr_text = pytesseract.image_to_string(img, lang=lang_config)
+                                    page_ocr_text = await loop.run_in_executor(
+                                        None,
+                                        lambda img=img, lang=lang_config: pytesseract.image_to_string(img, lang=lang)
+                                    )
                                 else:
-                                    page_ocr_text = pytesseract.image_to_string(img)
+                                    page_ocr_text = await loop.run_in_executor(
+                                        None,
+                                        lambda img=img: pytesseract.image_to_string(img)
+                                    )
                                 
                                 if page_ocr_text and page_ocr_text.strip():
                                     break
@@ -127,9 +260,17 @@ async def extract_pdf(pdf: UploadFile = File(...)):
                         print(f"⚠️ Eroare la OCR pentru pagina {page_num + 1}: {e}")
                         continue
                 
+                # Adaugă notă dacă au fost omise pagini
+                if total_pages > max_pages:
+                    ocr_text += f"\n\n[Notă: Doar primele {max_pages} pagini au fost procesate din {total_pages} totale]"
+                
                 if ocr_text.strip():
-                    text = ocr_text
-                    print(f"✅ Text extras cu OCR din {len(images)} pagini")
+                    # Limitează textul la 50000 caractere pentru a evita timeout-uri
+                    final_ocr_text = ocr_text.strip()
+                    if len(final_ocr_text) > 50000:
+                        final_ocr_text = final_ocr_text[:50000] + "\n\n[... text trunchiat pentru a evita timeout-uri ...]"
+                    text = final_ocr_text
+                    print(f"✅ Text extras cu OCR din {len(images_to_process)} pagini (din {total_pages} totale): {len(text)} caractere")
                 else:
                     return JSONResponse(
                         status_code=400,
@@ -164,11 +305,20 @@ async def extract_pdf(pdf: UploadFile = File(...)):
                 content={"error": "Nu s-a putut extrage text din PDF. PDF-ul poate fi protejat sau de calitate prea slabă."}
             )
         
+        # Limitează textul final la 50000 caractere pentru a evita timeout-uri
+        final_text = text.strip()
+        is_truncated = False
+        if len(final_text) > 50000:
+            final_text = final_text[:50000] + "\n\n[... text trunchiat pentru a evita timeout-uri ...]"
+            is_truncated = True
+        
         return JSONResponse(content={
-            "text": text.strip(),
+            "text": final_text,
             "pages": len(pdf_reader.pages),
             "filename": pdf.filename,
-            "method": "ocr" if not extracted_pages else "direct"
+            "method": "ocr" if not extracted_pages else "direct",
+            "truncated": is_truncated,
+            "original_length": len(text.strip())
         })
         
     except PyPDF2.errors.PdfReadError as e:
@@ -186,17 +336,111 @@ async def extract_pdf(pdf: UploadFile = File(...)):
         )
 
 @router.post("/extract-image")
-async def extract_image(image: UploadFile = File(...)):
+async def extract_image(
+    image: UploadFile = File(...),
+    correct_text: bool = Form(False),
+    expected_fields: Optional[str] = Form(None)
+):
     """
-    Extrage textul dintr-o imagine folosind OCR
+    Extrage textul dintr-o imagine folosind OCR (PaddleOCR preferat, fallback la Tesseract).
+    Opțional: corectează textul OCR și identifică datele lipsă.
+    
+    Args:
+        image: Fișierul imagine
+        correct_text: Dacă True, corectează automat textul OCR cu LLM
+        expected_fields: Lista de câmpuri așteptate (JSON string sau comma-separated) pentru identificare date lipsă
     """
     print(f"📸 Primire cerere extragere text din imagine: {image.filename}, content_type: {image.content_type}")
     
+    # Preferă PaddleOCR dacă este disponibil
+    if PADDLEOCR_AVAILABLE_IMPORT:
+        try:
+            # Citește conținutul imaginii
+            image_content = await image.read()
+            if not image_content:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "Fișierul este gol sau nu a putut fi citit."}
+                )
+            
+            print(f"📸 Procesare imagine cu PaddleOCR: {image.filename}, {len(image_content)} bytes")
+            
+            # Procesează cu PaddleOCR
+            text, _ = process_image(image_content, lang='ro', return_boxes=False)
+            
+            if not text or not text.strip():
+                print(f"⚠️ PaddleOCR nu a extras text, încerc cu Tesseract...")
+                # Fallback la Tesseract
+                if OCR_AVAILABLE:
+                    # Continuă cu Tesseract mai jos
+                    pass
+                else:
+                    return JSONResponse(
+                        status_code=400,
+                        content={"error": "Nu s-a putut extrage text din imagine. Imaginea poate să nu conțină text sau calitatea este prea slabă."}
+                    )
+            else:
+                print(f"✅ Text extras cu PaddleOCR: {len(text)} caractere")
+                extracted_text = text.strip()
+                
+                # Post-procesare: corectare text și identificare date lipsă
+                response_data = {
+                    "text": extracted_text,
+                    "filename": image.filename,
+                    "type": "image",
+                    "method": "paddleocr"
+                }
+                
+                if correct_text and correct_ocr_text:
+                    print("🔧 Corectare text OCR cu LLM...")
+                    try:
+                        # Folosește modelul default (qwen2.5:7b) - va fi setat automat în postprocess.py
+                        correction_result = correct_ocr_text(extracted_text, context=f"Document: {image.filename}")
+                        response_data["corrected_text"] = correction_result.get("corrected_text", extracted_text)
+                        response_data["corrections"] = correction_result.get("corrections", [])
+                        response_data["correction_confidence"] = correction_result.get("confidence", 0.0)
+                    except Exception as e:
+                        print(f"⚠️ Eroare la corectarea textului OCR: {e}")
+                        # Dacă corecția eșuează, folosește textul original
+                        response_data["corrected_text"] = extracted_text
+                        response_data["text"] = extracted_text  # Asigură-te că textul original este disponibil
+                
+                if expected_fields and identify_missing_fields:
+                    import json
+                    try:
+                        if expected_fields.startswith('['):
+                            fields_list = json.loads(expected_fields)
+                        else:
+                            fields_list = [f.strip() for f in expected_fields.split(',')]
+                        
+                        print(f"🔍 Identificare date lipsă pentru câmpuri: {fields_list}")
+                        missing_result = identify_missing_fields(extracted_text, fields_list, context=f"Document: {image.filename}")
+                        response_data["found_fields"] = missing_result.get("found_fields", [])
+                        response_data["missing_fields"] = missing_result.get("missing_fields", [])
+                        response_data["suggestions"] = missing_result.get("suggestions", "")
+                    except Exception as e:
+                        print(f"⚠️ Eroare la parsarea expected_fields sau identificarea datelor lipsă: {e}")
+                
+                return JSONResponse(content=response_data)
+        except Exception as e:
+            import traceback
+            print(f"⚠️ Eroare la PaddleOCR: {traceback.format_exc()}")
+            print(f"⚠️ Încerc cu Tesseract ca fallback...")
+            # Fallback la Tesseract dacă PaddleOCR eșuează
+            if not OCR_AVAILABLE:
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": f"PaddleOCR eșuat și Tesseract nu este disponibil. Eroare: {str(e)}"}
+                )
+            # Continuă cu Tesseract mai jos - resetează file pointer
+            await image.seek(0)
+    
+    # Fallback la Tesseract
     if not OCR_AVAILABLE:
         print("❌ OCR nu este disponibil")
         return JSONResponse(
             status_code=500,
-            content={"error": "OCR nu este disponibil. Rulează: pip install pytesseract pillow. Asigură-te că Tesseract OCR este instalat pe sistem."}
+            content={"error": "OCR nu este disponibil. Rulează: pip install paddleocr opencv-python SAU pip install pytesseract pillow. Asigură-te că Tesseract OCR este instalat pe sistem."}
         )
     
     # Verifică tipul de fișier (verifică și extensia dacă content_type nu este setat)
@@ -360,11 +604,44 @@ async def extract_image(image: UploadFile = File(...)):
                     content={"error": "Nu s-a putut extrage text din imagine. Imaginea poate să nu conțină text sau calitatea este prea slabă. Încearcă cu o imagine de calitate mai bună."}
                 )
         
-        return JSONResponse(content={
-            "text": text.strip(),
+        extracted_text = text.strip()
+        
+        # Post-procesare: corectare text și identificare date lipsă
+        response_data = {
+            "text": extracted_text,
             "filename": image.filename,
-            "type": "image"
-        })
+            "type": "image",
+            "method": "tesseract"
+        }
+        
+        if correct_text and correct_ocr_text:
+            print("🔧 Corectare text OCR cu LLM...")
+            try:
+                correction_result = correct_ocr_text(extracted_text, context=f"Document: {image.filename}")
+                response_data["corrected_text"] = correction_result.get("corrected_text", extracted_text)
+                response_data["corrections"] = correction_result.get("corrections", [])
+                response_data["correction_confidence"] = correction_result.get("confidence", 0.0)
+            except Exception as e:
+                print(f"⚠️ Eroare la corectarea textului OCR: {e}")
+                response_data["corrected_text"] = extracted_text
+        
+        if expected_fields and identify_missing_fields:
+            import json
+            try:
+                if expected_fields.startswith('['):
+                    fields_list = json.loads(expected_fields)
+                else:
+                    fields_list = [f.strip() for f in expected_fields.split(',')]
+                
+                print(f"🔍 Identificare date lipsă pentru câmpuri: {fields_list}")
+                missing_result = identify_missing_fields(extracted_text, fields_list, context=f"Document: {image.filename}")
+                response_data["found_fields"] = missing_result.get("found_fields", [])
+                response_data["missing_fields"] = missing_result.get("missing_fields", [])
+                response_data["suggestions"] = missing_result.get("suggestions", "")
+            except Exception as e:
+                print(f"⚠️ Eroare la parsarea expected_fields sau identificarea datelor lipsă: {e}")
+        
+        return JSONResponse(content=response_data)
         
     except Exception as e:
         import traceback

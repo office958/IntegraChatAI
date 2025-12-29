@@ -18,7 +18,15 @@ export default function MessageList({ messages, isStreaming, chatId, sessionId }
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollToBottom();
+    // Scroll mai agresiv când se stream-uiește pentru a urmări textul
+    if (isStreaming) {
+      // Folosim requestAnimationFrame pentru scroll smooth în timpul streaming-ului
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      });
+    } else {
+      scrollToBottom();
+    }
   }, [messages, isStreaming]);
 
   const scrollToBottom = () => {

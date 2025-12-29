@@ -10,6 +10,7 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
   const [isStreaming, setIsStreaming] = useState(false);
   const [pageContext, setPageContext] = useState<any>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [extractedTexts, setExtractedTexts] = useState<Map<string, string>>(new Map()); // Păstrează textele extrase per fișier
   const { user, token } = useAuth();
 
   // Încarcă istoricul conversației din baza de date când se schimbă chatId sau sessionId
@@ -35,14 +36,71 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
         
         if (response.ok) {
           const data = await response.json();
-          const historyMessages: MessageType[] = (data.messages || [])
-            .filter((msg: any) => msg.role !== 'system') // Filtrează mesajele de tip 'system' înainte de a le converti
-            .map((msg: any, index: number) => ({
-              id: `history-${index}-${Date.now()}`,
-              role: msg.role as 'user' | 'assistant',
-              content: msg.content,
-              timestamp: msg.created_at ? new Date(msg.created_at) : new Date(),
-            }));
+          
+          // Procesează mesajele și restaurează fișierele din file_info
+          const historyMessages: MessageType[] = [];
+          const newExtractedTexts = new Map<string, string>();
+          
+          (data.messages || [])
+            .filter((msg: any) => msg.role !== 'system') // Filtrează mesajele de tip 'system'
+            .forEach((msg: any, index: number) => {
+              // Procesează file_info dacă există
+              let files: Array<{ filename: string; type: 'pdf' | 'image'; url?: string; generated?: boolean }> | undefined = undefined;
+              
+              if (msg.file_info) {
+                try {
+                  // Parsează file_info dacă este string
+                  const fileInfo = typeof msg.file_info === 'string' 
+                    ? JSON.parse(msg.file_info) 
+                    : msg.file_info;
+                  
+                  // Construiește array-ul de fișiere pentru mesaj
+                  if (fileInfo && fileInfo.filename) {
+                    const fileType = fileInfo.fileType || fileInfo.type || 
+                      (fileInfo.filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image');
+                    
+                    files = [{
+                      filename: fileInfo.filename,
+                      type: fileType === 'pdf' ? 'pdf' : 'image',
+                      url: fileInfo.url || undefined,
+                      generated: fileInfo.generated || false
+                    }];
+                    
+                    // Restaurează textul extras dacă există (doar pentru fișierele încărcate de utilizator, nu cele generate)
+                    if (!fileInfo.generated && fileInfo.text && fileInfo.text.trim()) {
+                      newExtractedTexts.set(fileInfo.filename, fileInfo.text);
+                      console.log(`📎 Restaurat fișier din istoric: ${fileInfo.filename} (${fileType}) cu ${fileInfo.text.length} caractere`);
+                    } else if (fileInfo.generated) {
+                      console.log(`📎 Restaurat fișier generat din istoric: ${fileInfo.filename} (${fileType}) - URL: ${fileInfo.url || 'N/A'}`);
+                    } else {
+                      console.log(`📎 Restaurat fișier din istoric: ${fileInfo.filename} (${fileType}) fără text extras`);
+                    }
+                  }
+                } catch (e) {
+                  console.error('⚠️ Eroare la parsarea file_info:', e, msg.file_info);
+                }
+              }
+              
+              historyMessages.push({
+                id: `history-${index}-${Date.now()}`,
+                role: msg.role as 'user' | 'assistant',
+                content: msg.content,
+                timestamp: msg.created_at ? new Date(msg.created_at) : new Date(),
+                files: files
+              });
+            });
+          
+          // Actualizează extractedTexts cu fișierele restaurate
+          if (newExtractedTexts.size > 0) {
+            setExtractedTexts((prev) => {
+              const merged = new Map(prev);
+              newExtractedTexts.forEach((text, filename) => {
+                merged.set(filename, text);
+              });
+              console.log(`✅ Restaurat ${newExtractedTexts.size} fișier(e) din istoric în extractedTexts`);
+              return merged;
+            });
+          }
           
           setMessages(historyMessages);
         } else if (response.status === 404) {
@@ -118,8 +176,10 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
               try {
                 console.log(`🔄 Procesare fișier: ${file.name}, type: ${file.type}`);
                 if (file.type.startsWith('image/')) {
-                  console.log(`  → Folosește extractImageText pentru ${file.name}`);
-                  return await extractImageText(file);
+                  console.log(`  → Folosește extractImageText pentru ${file.name} (cu corecție automată)`);
+                  const result = await extractImageText(file, true); // Activează corecția automată
+                  // Returnează textul corectat dacă există, altfel textul original
+                  return result.correctedText || result.text;
                 } else {
                   console.log(`  → Folosește extractPDFText pentru ${file.name}`);
                   return await extractPDFText(file);
@@ -172,21 +232,58 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
           
           // Mapează corect numele fișierelor pentru textele extrase
           let textIndex = 0;
+          const missingFieldsAll: any[] = [];
+          
           pdfText = extractionResults
             .map((result, fileIndex) => {
               if (result.status === 'fulfilled' && result.value) {
                 const fileName = pdfFiles[fileIndex].name;
                 const text = result.value;
-                return `\n--- ${fileName} ---\n${text}`;
+                
+                // Salvează textul extras pentru a-l păstra între mesaje
+                setExtractedTexts((prev) => {
+                  const newMap = new Map(prev);
+                  newMap.set(fileName, text);
+                  return newMap;
+                });
+                
+                // Adaugă informații despre corecții și date lipsă dacă există
+                let fileText = `\n--- ${fileName} ---\n${text}`;
+                
+                // Verifică dacă există informații despre date lipsă
+                // (ar trebui să fie stocate în result.value dacă este obiect)
+                // Pentru moment, doar adăugăm textul
+                
+                return fileText;
               }
               return null;
             })
             .filter((item): item is string => item !== null)
             .join('\n\n');
           
+          // Adaugă informații despre date lipsă la sfârșit
+          if (missingFieldsAll.length > 0) {
+            pdfText += '\n\n=== DATE LIPSĂ ===\n';
+            missingFieldsAll.forEach(field => {
+              pdfText += `- ${field.field}: ${field.suggested_question || 'Lipsește'}\n`;
+            });
+          }
+          
           // Limitează la 5000 caractere
           if (pdfText.length > 5000) {
             pdfText = pdfText.substring(0, 5000) + '\n\n[... text trunchiat pentru viteză ...]';
+          }
+        } else {
+          // Dacă nu sunt fișiere noi, folosește textele extrase anterior
+          if (extractedTexts.size > 0) {
+            pdfText = Array.from(extractedTexts.entries())
+              .map(([fileName, text]) => `\n--- ${fileName} ---\n${text}`)
+              .join('\n\n');
+            
+            // Limitează la 5000 caractere
+            if (pdfText.length > 5000) {
+              pdfText = pdfText.substring(0, 5000) + '\n\n[... text trunchiat pentru viteză ...]';
+            }
           }
         }
 
@@ -207,6 +304,66 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
         // Adaugă user_id din context
         payload.user_id = user?.id || 1;
 
+        // IMPORTANT: Construiește files_info similar cu RAG - salvează toate fișierele
+        // Include atât fișierele noi (pdfFiles) cât și cele restaurate din istoric (extractedTexts)
+        const allFilesInfo: any[] = [];
+        
+        // Adaugă fișierele noi (dacă există)
+        if (pdfFiles && pdfFiles.length > 0) {
+          console.log(`📎 Construire files_info pentru ${pdfFiles.length} fișier(e) noi...`);
+          pdfFiles.forEach((file) => {
+            const filename = file.name;
+            const fileType = file.type.startsWith('image/') ? 'image' : 'pdf';
+            // Găsește textul extras pentru acest fișier
+            const extractedText = extractedTexts.get(filename);
+            
+            const fileInfo: any = {
+              filename: filename,
+              type: fileType,
+              text: extractedText || null
+            };
+            
+            console.log(`  📄 Fișier procesat: ${fileInfo.filename}, type: ${fileInfo.type}, hasText: ${!!fileInfo.text}`);
+            allFilesInfo.push(fileInfo);
+          });
+        }
+        
+        // Adaugă fișierele restaurate din istoric (care nu sunt în pdfFiles)
+        if (extractedTexts.size > 0) {
+          console.log(`📎 Verificare fișiere restaurate din istoric (${extractedTexts.size} fișier(e))...`);
+          extractedTexts.forEach((text, filename) => {
+            // Verifică dacă fișierul nu este deja în allFilesInfo
+            const alreadyIncluded = allFilesInfo.some(f => f.filename === filename);
+            if (!alreadyIncluded) {
+              // Determină tipul fișierului din extensie
+              const fileType = filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image';
+              
+              const fileInfo: any = {
+                filename: filename,
+                type: fileType,
+                text: text || null
+              };
+              
+              console.log(`  📄 Fișier restaurat din istoric: ${fileInfo.filename}, type: ${fileInfo.type}, hasText: ${!!fileInfo.text}`);
+              allFilesInfo.push(fileInfo);
+            }
+          });
+        }
+        
+        // Adaugă files_info în payload dacă există fișiere
+        if (allFilesInfo.length > 0) {
+          payload.files_info = allFilesInfo;
+          console.log(`✅✅✅ TRIMITE ${payload.files_info.length} fișier(e) cu files_info către backend ✅✅✅`);
+          console.log('  - files_info:', JSON.stringify(payload.files_info, null, 2));
+        } else {
+          console.log('⚠️ Nu există fișiere - files_info NU va fi trimis!');
+        }
+
+        // Adaugă textul din PDF-uri dacă există
+        if (pdfText && pdfText.length > 0) {
+          payload.pdf_text = pdfText;
+        }
+        
         // Adaugă context dacă este necesar
         const needsContext = pdfText.length > 0 || /completează|complet|formular|automat|auto-fill|auto fill/i.test(message);
         if (pageContext && needsContext) {
@@ -218,10 +375,6 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
             optimizedContext.form_fields = optimizedContext.form_fields.slice(0, 20);
           }
           payload.page_context = optimizedContext;
-        }
-
-        if (pdfText) {
-          payload.pdf_text = pdfText;
         }
 
         // Trimite request și procesează stream
@@ -246,7 +399,6 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
         const decoder = new TextDecoder('utf-8');
         let accumulatedText = '';
         let aiMessageId = Date.now().toString();
-        let firstChunk = true;
 
         // Creează mesajul AI inițial cu conținut gol pentru a declanșa TypingIndicator
         const aiMessage: MessageType = {
@@ -261,63 +413,171 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
           setMessages((prev) => [...prev, aiMessage]);
         });
 
-        // Procesează stream-ul și actualizează imediat la fiecare chunk
+
+        // Funcție pentru detectarea link-urilor către PDF-uri generate
+        const detectGeneratedFiles = (text: string): Array<{ filename: string; type: 'pdf' | 'image'; url: string; generated: boolean }> => {
+          const pdfUrlPattern = /(?:https?:\/\/[^\s]+)?\/pdf_generated\/[^\s\)]+\.pdf/gi;
+          const matches = text.match(pdfUrlPattern);
+          
+          if (!matches || matches.length === 0) return [];
+          
+          return matches.map((url) => {
+            // Extrage numele fișierului din URL
+            const filename = url.split('/').pop() || `document_${Date.now()}.pdf`;
+            // Construiește URL complet dacă este relativ
+            const fullUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+            
+            return {
+              filename,
+              type: 'pdf' as const,
+              url: fullUrl,
+              generated: true
+            };
+          });
+        };
+        
+        // Procesează stream-ul token-by-token pentru animație smooth
+        let pendingUpdate: number | null = null;
+        let lastContent = '';
+        let hasPendingContent = false;
+        let detectedFiles: Array<{ filename: string; type: 'pdf' | 'image'; url: string; generated: boolean }> = [];
+        
+        const scheduleUpdate = () => {
+          // Dacă conținutul nu s-a schimbat, nu actualizăm
+          if (accumulatedText === lastContent) {
+            hasPendingContent = false;
+            return;
+          }
+          
+          hasPendingContent = true;
+          
+          // Dacă există deja un update programat, doar marchează că avem conținut nou
+          if (pendingUpdate !== null) {
+            return;
+          }
+          
+          // Folosim requestAnimationFrame pentru sincronizare cu refresh-ul ecranului
+          pendingUpdate = requestAnimationFrame(() => {
+            // Verifică din nou dacă conținutul s-a schimbat
+            if (accumulatedText !== lastContent) {
+              // Detectează fișiere generate în text
+              const newDetectedFiles = detectGeneratedFiles(accumulatedText);
+              if (newDetectedFiles.length > 0) {
+                detectedFiles = newDetectedFiles;
+              }
+              
+              flushSync(() => {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === aiMessageId
+                      ? { 
+                          ...msg, 
+                          content: accumulatedText,
+                          files: detectedFiles.length > 0 ? detectedFiles : undefined
+                        }
+                      : msg
+                  )
+                );
+              });
+              lastContent = accumulatedText;
+            }
+            
+            hasPendingContent = false;
+            pendingUpdate = null;
+            
+            // Dacă conținutul s-a schimbat în timpul actualizării, programează următoarea imediat
+            if (accumulatedText !== lastContent || hasPendingContent) {
+              scheduleUpdate();
+            }
+          });
+        };
+        
         while (true) {
           const { done, value } = await reader.read();
           
           if (done) {
+            // Anulează orice actualizare programată
+            if (pendingUpdate !== null) {
+              cancelAnimationFrame(pendingUpdate);
+              pendingUpdate = null;
+            }
+            
             // Procesează ultimul chunk rămas în decoder
             try {
               const finalChunk = decoder.decode();
               if (finalChunk && finalChunk.length > 0) {
                 accumulatedText += finalChunk;
-                // Forțează ultima actualizare
-                flushSync(() => {
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === aiMessageId
-                        ? { ...msg, content: accumulatedText }
-                        : msg
-                    )
-                  );
-                });
               }
+              // Detectează fișiere generate în textul final
+              const finalDetectedFiles = detectGeneratedFiles(accumulatedText);
+              if (finalDetectedFiles.length > 0) {
+                detectedFiles = finalDetectedFiles;
+              }
+              
+              // Forțează ultima actualizare
+              flushSync(() => {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === aiMessageId
+                      ? { 
+                          ...msg, 
+                          content: accumulatedText,
+                          files: detectedFiles.length > 0 ? detectedFiles : undefined
+                        }
+                      : msg
+                  )
+                );
+              });
             } catch (e) {
               // Ignoră erori la decodarea finală
             }
             break;
           }
 
-          // Decode chunk-ul cu stream: true pentru a gestiona caractere UTF-8 multi-byte
+          // Procesează fiecare chunk imediat
           if (value && value.length > 0) {
             try {
-              // Decode fără stream: true pentru caractere individuale
-              const chunk = decoder.decode(value, { stream: false });
-              // Adaugă chunk-ul dacă există (chiar și string-uri goale pot fi importante)
-              // NU ignorăm niciun chunk - toate sunt importante!
-              if (chunk !== null && chunk !== undefined && chunk.length > 0) {
-                if (firstChunk) {
-                  console.log('🔵 PRIMUL CHUNK primit [' + chunk.length + ' chars]:', chunk.substring(0, 200));
-                  firstChunk = false;
-                }
+              // Decode cu stream: true pentru a gestiona corect caracterele UTF-8
+              const chunk = decoder.decode(value, { stream: true });
+              
+              if (chunk && chunk.length > 0) {
                 accumulatedText += chunk;
                 
-                // Actualizează mesajul imediat pentru efectul de streaming
-                // Folosim flushSync pentru actualizare sincronă și vizibilă
-                flushSync(() => {
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === aiMessageId
-                        ? { ...msg, content: accumulatedText }
-                        : msg
-                    )
-                  );
-                });
+                // Programează actualizare imediat pentru efect streaming vizibil
+                scheduleUpdate();
               }
             } catch (e) {
               console.error('❌ Error decoding chunk:', e, 'Value:', value);
             }
           }
+        }
+        
+        // Asigură-te că ultima actualizare este făcută
+        if (pendingUpdate !== null) {
+          cancelAnimationFrame(pendingUpdate);
+          pendingUpdate = null;
+        }
+        // Detectează fișiere generate în textul final
+        const finalDetectedFiles = detectGeneratedFiles(accumulatedText);
+        if (finalDetectedFiles.length > 0) {
+          detectedFiles = finalDetectedFiles;
+        }
+        
+        if (accumulatedText && accumulatedText !== lastContent) {
+          flushSync(() => {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === aiMessageId
+                  ? { 
+                      ...msg, 
+                      content: accumulatedText,
+                      files: detectedFiles.length > 0 ? detectedFiles : undefined
+                    }
+                  : msg
+              )
+            );
+          });
+          lastContent = accumulatedText;
         }
 
         // Încearcă auto-fill după ce s-a terminat stream-ul

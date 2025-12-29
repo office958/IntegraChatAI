@@ -40,7 +40,141 @@ window.addEventListener('load', () => {
   
   // Setup Speech to Text
   setupSpeechToText();
+  
+  // Încarcă istoricul conversației dacă există
+  loadConversationHistory();
 });
+
+// ============================
+// === Încărcare Istoric ====
+// ============================
+async function loadConversationHistory() {
+  try {
+    const chatId = window.location.pathname.split('/')[2];
+    if (!chatId) return; // Nu există chat_id, nu încărcăm istoric
+    
+    // Obține session_id din URL sau localStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    let sessionId = urlParams.get('session_id');
+    if (!sessionId) {
+      // Încearcă să obțină din localStorage
+      sessionId = localStorage.getItem(`chat_session_${chatId}`);
+    }
+    
+    const endpoint = sessionId 
+      ? `http://127.0.0.1:3000/chat/${chatId}/history?session_id=${sessionId}`
+      : `http://127.0.0.1:3000/chat/${chatId}/history`;
+    
+    const response = await fetch(endpoint);
+    if (!response.ok) return;
+    
+    const data = await response.json();
+    if (!data.messages || data.messages.length === 0) return;
+    
+    // Șterge mesajul de bun venit
+    const welcomeMessage = chatMessages.querySelector('.welcome-message');
+    if (welcomeMessage) {
+      welcomeMessage.remove();
+    }
+    
+    // Adaugă clasa pentru a indica că există mesaje
+    chatContainer.classList.add('has-messages');
+    
+    // Afișează fiecare mesaj din istoric
+    data.messages.forEach((msg) => {
+      if (msg.role === 'user') {
+        // Verifică dacă mesajul are file_info (mod nou)
+        if (msg.file_info && msg.file_info.type === 'file' && msg.file_info.filename) {
+          // Este un mesaj cu fișier (mod nou cu file_info)
+          const fileType = msg.file_info.fileType || (msg.file_info.filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image');
+          
+          addFileMessageFromHistory({
+            filename: msg.file_info.filename,
+            type: fileType
+          });
+          
+          // Adaugă fișierul în pdfFiles pentru a-l păstra disponibil după refresh
+          const existingFileIndex = pdfFiles.findIndex(p => p.filename === msg.file_info.filename);
+          if (existingFileIndex < 0) {
+            // Creează un obiect mock File pentru a păstra compatibilitatea
+            // Nu avem fișierul real, dar păstrăm informațiile pentru a fi disponibile
+            pdfFiles.push({
+              filename: msg.file_info.filename,
+              type: fileType,
+              fromHistory: true // Flag pentru a indica că vine din istoric
+            });
+          }
+          
+          // Reîncarcă textul fișierului dacă există în file_info
+          if (msg.file_info.text) {
+            // Găsește sau creează intrarea în pdfTexts
+            const existingIndex = pdfTexts.findIndex(p => p.filename === msg.file_info.filename);
+            if (existingIndex >= 0) {
+              pdfTexts[existingIndex].text = msg.file_info.text;
+            } else {
+              pdfTexts.push({
+                filename: msg.file_info.filename,
+                text: msg.file_info.text,
+                type: fileType
+              });
+            }
+          }
+        } else {
+          // Verifică dacă este un mesaj vechi cu JSON în content (compatibilitate)
+          try {
+            const fileData = JSON.parse(msg.content);
+            if (fileData.type === 'file' && fileData.filename) {
+              // Este un mesaj cu fișier (mod vechi)
+              addFileMessageFromHistory({
+                filename: fileData.filename,
+                type: fileData.fileType || (fileData.filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image')
+              });
+            } else {
+              // Este un mesaj text normal
+              addUserMessage(msg.content);
+            }
+          } catch (e) {
+            // Nu este JSON, este un mesaj text normal
+            addUserMessage(msg.content);
+          }
+        }
+      } else if (msg.role === 'assistant') {
+        addAiMessage(msg.content);
+      }
+    });
+    
+    scrollToBottom();
+  } catch (error) {
+    console.error('Eroare la încărcarea istoricului:', error);
+  }
+}
+
+// Funcție pentru a adăuga mesaj cu fișier din istoric
+function addFileMessageFromHistory(file) {
+  const messageDiv = document.createElement('div');
+  messageDiv.className = 'message user';
+  
+  const fileIcon = file.type === 'pdf' 
+    ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2V8H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/><path d="M21 15L16 10L5 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  
+  const fileTypeLabel = file.type === 'pdf' ? 'PDF' : 'IMAGINE';
+  
+  messageDiv.innerHTML = `
+    <div class="message-avatar user-avatar">Tu</div>
+    <div class="message-content file-message">
+      <div class="file-message-content">
+        ${fileIcon}
+        <div class="file-message-info">
+          <div class="file-message-name">${file.filename}</div>
+          <div class="file-message-type">${fileTypeLabel}</div>
+        </div>
+      </div>
+      <div class="message-time">${getCurrentTime()}</div>
+    </div>
+  `;
+  chatMessages.appendChild(messageDiv);
+}
 
 // === Afișează mesajul de bun venit ===
 function showWelcomeMessage() {
@@ -85,14 +219,31 @@ async function sendMessage() {
     if (message) {
       addUserMessage(message);
       fullMessage = message; // Mesajul pentru LLM rămâne doar textul (PDF-urile/imagini sunt în payload.pdf_text)
+      
+      // Salvează mesajul text în baza de date
+      await saveTextMessageToDatabase(message);
     } else {
       fullMessage = 'Completează formularul folosind informațiile din documentele încărcate.';
     }
     
-    // Adaugă fiecare fișier ca mesaj separat în chat
-    pdfFiles.forEach((file) => {
+    // Adaugă fiecare fișier ca mesaj separat în chat și salvează în baza de date
+    console.log(`📎 Salvare ${pdfFiles.length} fișier(e) în baza de date...`);
+    for (const file of pdfFiles) {
+      // Skip fișierele care vin din istoric (nu trebuie salvate din nou)
+      if (file.fromHistory) {
+        console.log(`⏭️ Skip salvarea fișierului din istoric: ${file.filename}`);
+        addFileMessage(file);
+        continue;
+      }
+      
       addFileMessage(file);
-    });
+      // Salvează mesajul cu fișier în baza de date
+      try {
+        await saveFileMessageToDatabase(file);
+      } catch (error) {
+        console.error('❌ Eroare la salvarea fișierului:', file.filename, error);
+      }
+    }
   } else {
     // Dacă nu sunt fișiere, adaugă doar mesajul text
     addUserMessage(displayMessage);
@@ -102,8 +253,28 @@ async function sendMessage() {
 
   showTypingIndicator();
 
+  // Salvează o copie a pdfFiles și pdfTexts înainte de a le șterge
+  const pdfFilesCopy = [...pdfFiles];
+  const pdfTextsCopy = [...pdfTexts];
+  
+  console.log('='.repeat(80));
+  console.log('🔍 DEBUG sendMessage - SALVARE COPII');
+  console.log('='.repeat(80));
+  console.log('  - pdfFiles.length:', pdfFiles.length);
+  console.log('  - pdfTexts.length:', pdfTexts.length);
+  console.log('  - pdfFilesCopy.length:', pdfFilesCopy.length);
+  console.log('  - pdfTextsCopy.length:', pdfTextsCopy.length);
+  console.log('  - pdfFilesCopy:', JSON.stringify(pdfFilesCopy, null, 2));
+  console.log('  - pdfTextsCopy (sumar):', pdfTextsCopy.map(p => ({ 
+    filename: p.filename, 
+    textLength: p.text?.length || 0 
+  })));
+  console.log('='.repeat(80));
+
   setTimeout(() => {
-    startStreamingResponse(fullMessage);
+    console.log('🚀 APEL startStreamingResponse cu copiile...');
+    // Folosește copiile pentru a construi payload-ul
+    startStreamingResponse(fullMessage, pdfFilesCopy, pdfTextsCopy);
     
     // Șterge PDF-urile după trimitere (după ce mesajul a fost trimis)
     if (pdfFiles.length > 0) {
@@ -112,6 +283,188 @@ async function sendMessage() {
       }, 200);
     }
   }, 500);
+}
+
+// Funcție pentru a salva mesajele text în baza de date
+async function saveTextMessageToDatabase(message) {
+  try {
+    console.log('🔍 saveTextMessageToDatabase apelat pentru mesaj:', message.substring(0, 50));
+    
+    // Obține chatId din URL (folosim aceeași metodă ca în loadConversationHistory)
+    const chatId = window.location.pathname.split('/')[2];
+    
+    console.log('🔍 chatId extras:', chatId, 'pathname:', window.location.pathname);
+    
+    if (!chatId) {
+      console.error('❌ Nu există chat_id valid, nu salvăm mesajul');
+      return; // Nu există chat_id, nu salvăm
+    }
+    
+    // Obține session_id din URL sau localStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    let sessionId = urlParams.get('session_id');
+    if (!sessionId) {
+      sessionId = localStorage.getItem(`chat_session_${chatId}`);
+    }
+    
+    // Trimite mesajul către server pentru a fi salvat
+    const endpoint = `http://127.0.0.1:3000/chat/${chatId}/save-message`;
+    const payload = {
+      role: 'user',
+      content: message
+    };
+    
+    if (sessionId) {
+      payload.session_id = parseInt(sessionId);
+    }
+    
+    console.log('💾 Salvare mesaj text în baza de date:', {
+      message: message.substring(0, 50) + '...',
+      sessionId: sessionId,
+      chatId: chatId
+    });
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData = {};
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        errorData = { detail: errorText };
+      }
+      console.error('❌ Eroare la salvarea mesajului text:', errorData);
+      throw new Error(`HTTP ${response.status}: ${errorData.detail || errorData.message || 'Eroare necunoscută'}`);
+    }
+    
+    const result = await response.json();
+    console.log('✅ Mesaj text salvat cu succes:', result);
+  } catch (error) {
+    console.error('❌ Eroare la salvarea mesajului text:', error);
+  }
+}
+
+// Funcție pentru a salva mesajele cu fișiere în baza de date
+async function saveFileMessageToDatabase(file) {
+  console.log("=".repeat(80));
+  console.log("🔍🔍🔍 DEBUG saveFileMessageToDatabase - ÎNCEPUT 🔍🔍🔍");
+  console.log("=".repeat(80));
+  try {
+    // Verifică structura obiectului file
+    console.log('📄 File object complet:', JSON.stringify(file, null, 2));
+    console.log('  - file.filename:', file.filename);
+    console.log('  - file.name:', file.name);
+    console.log('  - file.type:', file.type);
+    console.log('  - file.fromHistory:', file.fromHistory);
+    
+    // Obține chatId din URL (folosim aceeași metodă ca în loadConversationHistory)
+    const chatId = window.location.pathname.split('/')[2];
+    
+    console.log('🔍 chatId extras:', chatId, 'pathname:', window.location.pathname);
+    
+    if (!chatId) {
+      console.error('❌ Nu există chat_id valid, nu salvăm fișierul');
+      return; // Nu există chat_id, nu salvăm
+    }
+    
+    // Obține session_id din URL sau localStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    let sessionId = urlParams.get('session_id');
+    if (!sessionId) {
+      sessionId = localStorage.getItem(`chat_session_${chatId}`);
+    }
+    
+    // Determină filename și type
+    const filename = file.filename || file.name || 'necunoscut';
+    const fileType = file.type || (filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image');
+    
+    // Creează informații despre fișier pentru file_info
+    const fileInfo = {
+      type: 'file',
+      filename: filename,
+      fileType: fileType
+    };
+    
+    // Găsește textul extras pentru acest fișier (dacă există)
+    // Caută după filename sau name
+    const pdfText = pdfTexts.find(p => p.filename === filename || p.filename === file.name);
+    if (pdfText && pdfText.text) {
+      // Limitează la 10000 caractere pentru baza de date (JSON poate stoca mult mai mult)
+      fileInfo.text = pdfText.text.length > 10000 
+        ? pdfText.text.substring(0, 10000) + '\n[... text trunchiat ...]'
+        : pdfText.text;
+      fileInfo.textLength = pdfText.text.length; // Salvează lungimea completă pentru referință
+    }
+    
+    // Trimite mesajul către server pentru a fi salvat
+    // Folosim un mesaj text simplu pentru content și file_info pentru informațiile despre fișier
+    const endpoint = `http://127.0.0.1:3000/chat/${chatId}/save-message`;
+    const payload = {
+      role: 'user',
+      content: `Fișier atașat: ${filename}`, // Mesaj text simplu pentru content
+      file_info: fileInfo // Informații despre fișier în file_info
+    };
+    
+    if (sessionId) {
+      payload.session_id = parseInt(sessionId);
+    }
+    
+    console.log('💾 Salvare fișier în baza de date:');
+    console.log('  - filename:', filename);
+    console.log('  - type:', fileInfo.fileType);
+    console.log('  - hasText:', !!fileInfo.text);
+    console.log('  - sessionId:', sessionId);
+    console.log('  - chatId:', chatId);
+    console.log('  - fileInfo:', JSON.stringify(fileInfo, null, 2));
+    console.log('  - payload:', JSON.stringify(payload, null, 2));
+    
+    console.log('🚀 TRIMITE REQUEST la backend:');
+    console.log('  - endpoint:', endpoint);
+    console.log('  - method: POST');
+    console.log('  - headers: Content-Type: application/json');
+    console.log('  - body:', JSON.stringify(payload, null, 2));
+    
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    
+    console.log('📥 RĂSPUNS PRIMIT de la backend:');
+    console.log('  - status:', response.status);
+    console.log('  - ok:', response.ok);
+    console.log('  - statusText:', response.statusText);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData = {};
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        errorData = { detail: errorText };
+      }
+      console.error('❌ Eroare la salvarea fișierului:', errorData);
+      throw new Error(`HTTP ${response.status}: ${errorData.detail || errorData.message || 'Eroare necunoscută'}`);
+    }
+    
+    const result = await response.json();
+    console.log('✅ RĂSPUNS de la server:', result);
+    console.log('✅ Fișier salvat cu succes!');
+    console.log("=" * 80);
+  } catch (error) {
+    console.error("=" * 80);
+    console.error('❌ EROARE la salvarea mesajului cu fișier:');
+    console.error('  - Error:', error);
+    console.error('  - Error message:', error.message);
+    console.error('  - Error stack:', error.stack);
+    console.error("=" * 80);
+    // Nu aruncăm eroarea pentru a nu întrerupe fluxul, dar logăm eroarea
+  }
 }
 
 async function sendQuickMessage(message) {
@@ -125,8 +478,25 @@ async function sendQuickMessage(message) {
 // ============================
 // === Stream Răspuns AI ====
 // ============================
-async function startStreamingResponse(message) {
+async function startStreamingResponse(message, pdfFilesToUse = null, pdfTextsToUse = null) {
+  console.log('='.repeat(80));
+  console.log('🚀🚀🚀 startStreamingResponse APELAT 🚀🚀🚀');
+  console.log('='.repeat(80));
+  console.log('  - message:', message);
+  console.log('  - pdfFilesToUse:', pdfFilesToUse);
+  console.log('  - pdfTextsToUse:', pdfTextsToUse);
+  console.log('  - pdfFilesToUse length:', pdfFilesToUse?.length || 0);
+  console.log('  - pdfTextsToUse length:', pdfTextsToUse?.length || 0);
+  
   try {
+    // Folosește copiile dacă sunt furnizate, altfel folosește variabilele globale
+    const filesToProcess = pdfFilesToUse !== null ? pdfFilesToUse : pdfFiles;
+    const textsToProcess = pdfTextsToUse !== null ? pdfTextsToUse : pdfTexts;
+    
+    console.log('  - filesToProcess length:', filesToProcess.length);
+    console.log('  - textsToProcess length:', textsToProcess.length);
+    console.log('='.repeat(80));
+    
     const chatId = window.location.pathname.split('/')[2];
     const endpoint = chatId
       ? `http://127.0.0.1:3000/chat/${chatId}/ask`
@@ -136,6 +506,55 @@ async function startStreamingResponse(message) {
     const payload = {
       message: message
     };
+    
+    // Adaugă chat_id dacă există (pentru endpoint-ul /ask)
+    if (chatId) {
+      payload.chat_id = chatId;
+    }
+    
+    // Adaugă informații despre fișiere dacă există
+    console.log('='.repeat(80));
+    console.log('🔍 DEBUG startStreamingResponse - CONSTRUIRE PAYLOAD');
+    console.log('='.repeat(80));
+    console.log('  - filesToProcess.length:', filesToProcess.length);
+    console.log('  - textsToProcess.length:', textsToProcess.length);
+    console.log('  - filesToProcess complet:', JSON.stringify(filesToProcess, null, 2));
+    console.log('  - textsToProcess (sumar):', textsToProcess.map(p => ({ 
+      filename: p.filename, 
+      textLength: p.text?.length || 0,
+      type: p.type 
+    })));
+    
+    if (filesToProcess.length > 0) {
+      console.log('✅ Există fișiere, construiesc files_info...');
+      // IMPORTANT: Include TOATE fișierele (chiar și cele din istoric) pentru a ști ce fișiere sunt în chat
+      // Similar cu RAG care salvează toate fișierele
+      const filesToSend = filesToProcess; // Nu mai filtrăm by fromHistory
+      console.log(`  - Total fișiere de trimis: ${filesToSend.length} din ${filesToProcess.length}`);
+      
+      payload.files_info = filesToSend.map(file => {
+        const filename = file.filename || file.name || 'necunoscut';
+        const pdfText = textsToProcess.find(p => p.filename === filename || p.filename === file.name);
+        const fileInfo = {
+          filename: filename,
+          type: file.type || (filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image'),
+          text: pdfText ? pdfText.text : null
+        };
+        console.log(`  📄 Fișier procesat:`);
+        console.log(`    - filename: ${fileInfo.filename}`);
+        console.log(`    - type: ${fileInfo.type}`);
+        console.log(`    - fromHistory: ${file.fromHistory || false}`);
+        console.log(`    - hasText: ${!!fileInfo.text}`);
+        console.log(`    - textLength: ${fileInfo.text?.length || 0}`);
+        return fileInfo;
+      });
+      
+      console.log(`📎✅✅✅ TRIMITE ${payload.files_info.length} fișier(e) cu metadata către backend ✅✅✅:`);
+      console.log('  - files_info complet:', JSON.stringify(payload.files_info, null, 2));
+    } else {
+      console.log('⚠️ Nu există fișiere - files_info NU va fi trimis!');
+    }
+    console.log('='.repeat(80));
 
     // Adaugă context despre pagină DOAR dacă este necesar (optimizare performanță)
     // Contextul este necesar doar când:
@@ -174,20 +593,42 @@ async function startStreamingResponse(message) {
     }
 
     // Combină toate textele PDF-urilor (limitează dimensiunea pentru viteză)
-    if (pdfTexts.length > 0) {
-      let combinedPdfText = pdfTexts.map(p => `\n--- ${p.filename} ---\n${p.text}`).join('\n\n');
+    if (textsToProcess.length > 0) {
+      let combinedPdfText = textsToProcess.map(p => `\n--- ${p.filename} ---\n${p.text || ''}`).join('\n\n');
       // Limitează la 5000 caractere pentru requesturi mai rapide
       if (combinedPdfText.length > 5000) {
         combinedPdfText = combinedPdfText.substring(0, 5000) + '\n\n[... text trunchiat pentru viteză ...]';
       }
       payload.pdf_text = combinedPdfText;
+      console.log(`📎 Trimite ${textsToProcess.length} fișier(e) cu ${combinedPdfText.length} caractere către LLM`);
+    } else {
+      console.log(`⚠️ Nu există texte PDF/imagini de trimis către LLM`);
     }
 
+    console.log('🚀🚀🚀 TRIMITE REQUEST către backend 🚀🚀🚀:');
+    console.log('  - endpoint:', endpoint);
+    console.log('  - payload keys:', Object.keys(payload));
+    console.log('  - payload.message length:', payload.message?.length || 0);
+    console.log('  - payload.files_info EXISTS:', 'files_info' in payload);
+    console.log('  - payload.files_info VALUE:', payload.files_info);
+    console.log('  - payload.files_info TYPE:', typeof payload.files_info);
+    console.log('  - payload.files_info IS NULL:', payload.files_info === null);
+    console.log('  - payload.files_info IS UNDEFINED:', payload.files_info === undefined);
+    if (payload.files_info) {
+      console.log('  - payload.files_info.length:', payload.files_info.length);
+      console.log('  - payload.files_info content:', JSON.stringify(payload.files_info, null, 2));
+    }
+    console.log('  - payload complet:', JSON.stringify(payload, null, 2));
+    
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
+    
+    console.log('📥 RĂSPUNS PRIMIT de la backend:');
+    console.log('  - status:', response.status);
+    console.log('  - ok:', response.ok);
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -272,6 +713,10 @@ async function startStreamingResponse(message) {
 
       // Formatează textul pentru afișare frumoasă
       messageContent.innerHTML = formatMessageText(accumulatedText);
+      
+      // Detectează link-uri către PDF-uri generate în răspuns
+      detectAndDisplayGeneratedFiles(messageDiv, accumulatedText);
+      
       scrollToBottom();
 
       await new Promise(resolve => setTimeout(resolve, 20));
@@ -288,11 +733,70 @@ async function startStreamingResponse(message) {
 
     // Când fluxul s-a terminat, încearcă să detectezi și completezi automat
     tryAutoFillFields(accumulatedText);
+    
+    // După ce s-a terminat streaming-ul, verifică din nou pentru documente generate
+    if (messageDiv && messageContent) {
+      detectAndDisplayGeneratedFiles(messageDiv, accumulatedText);
+    }
 
   } catch (error) {
     hideTypingIndicator();
     addAiMessage("Îmi pare rău, momentan nu pot accesa serverul. Vă rog încercați mai târziu.");
     console.error('Streaming error:', error);
+  }
+}
+
+// Funcție pentru a detecta și afișa documentele generate de LLM
+function detectAndDisplayGeneratedFiles(messageDiv, text) {
+  // Detectează link-uri către PDF-uri (pattern: http://.../pdf_generated/... sau /pdf_generated/...)
+  const pdfUrlPattern = /(?:https?:\/\/[^\s]+)?\/pdf_generated\/[^\s\)]+\.pdf/gi;
+  const matches = text.match(pdfUrlPattern);
+  
+  if (matches && matches.length > 0) {
+    // Verifică dacă nu există deja un container pentru fișiere generate
+    let filesContainer = messageDiv.querySelector('.generated-files-container');
+    if (!filesContainer) {
+      filesContainer = document.createElement('div');
+      filesContainer.className = 'generated-files-container';
+      filesContainer.style.marginTop = '12px';
+      filesContainer.style.paddingTop = '12px';
+      filesContainer.style.borderTop = '1px solid #e5e7eb';
+      messageDiv.querySelector('.message-content').appendChild(filesContainer);
+    }
+    
+    // Adaugă fiecare PDF detectat
+    matches.forEach((url, index) => {
+      // Verifică dacă fișierul nu a fost deja adăugat
+      const existingFile = filesContainer.querySelector(`[data-file-url="${url}"]`);
+      if (existingFile) return;
+      
+      // Extrage numele fișierului din URL
+      const filename = url.split('/').pop() || `document_${index + 1}.pdf`;
+      
+      // Creează elementul pentru fișier
+      const fileElement = document.createElement('div');
+      fileElement.className = 'generated-file-item';
+      fileElement.setAttribute('data-file-url', url);
+      fileElement.style.display = 'flex';
+      fileElement.style.alignItems = 'center';
+      fileElement.style.gap = '8px';
+      fileElement.style.padding = '8px';
+      fileElement.style.backgroundColor = '#f3f4f6';
+      fileElement.style.borderRadius = '6px';
+      fileElement.style.marginBottom = '8px';
+      
+      const fileIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2V8H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      
+      fileElement.innerHTML = `
+        ${fileIcon}
+        <span style="flex: 1; font-size: 14px; color: #374151;">${filename}</span>
+        <a href="${url}" target="_blank" download="${filename}" style="color: #3b82f6; text-decoration: none; font-size: 14px; font-weight: 500;">
+          Descarcă
+        </a>
+      `;
+      
+      filesContainer.appendChild(fileElement);
+    });
   }
 }
 
@@ -876,6 +1380,7 @@ function setupPdfUpload() {
 
     // Validează toate fișierele (PDF sau imagini)
     const validFiles = [];
+    const invalidFiles = [];
     const allowedTypes = {
       'application/pdf': 'pdf',
       'image/jpeg': 'image',
@@ -889,27 +1394,46 @@ function setupPdfUpload() {
     for (const file of files) {
       const fileType = allowedTypes[file.type];
       if (!fileType) {
-        alert(`⚠️ ${file.name} nu este PDF sau imagine suportată!`);
+        invalidFiles.push({ file, reason: `${file.name} nu este PDF sau imagine suportată!` });
         continue;
       }
 
       if (file.size > 10 * 1024 * 1024) {
-        alert(`⚠️ ${file.name} este prea mare! Maxim 10MB.`);
+        invalidFiles.push({ file, reason: `${file.name} este prea mare! Maxim 10MB.` });
         continue;
       }
 
       // Verifică dacă fișierul nu e deja încărcat
       if (pdfFiles.some(f => f.filename === file.name)) {
-        alert(`⚠️ ${file.name} este deja încărcat!`);
+        invalidFiles.push({ file, reason: `${file.name} este deja încărcat!` });
         continue;
       }
 
       validFiles.push({ file, type: fileType });
     }
 
+    // Afișează erorile pentru fișiere invalide (dacă există)
+    if (invalidFiles.length > 0) {
+      const errorMessages = invalidFiles.map(f => f.reason).join('\n');
+      if (invalidFiles.length === files.length) {
+        // Toate fișierele sunt invalide - nu închide modalul
+        alert(`⚠️ Nu s-au putut încărca fișiere:\n${errorMessages}`);
+        pdfInput.value = '';
+        return;
+      } else {
+        // Unele fișiere sunt invalide, dar altele sunt valide
+        alert(`⚠️ Unele fișiere nu s-au putut încărca:\n${errorMessages}\n\nFișierele valide vor fi procesate.`);
+      }
+    }
+
     if (validFiles.length === 0) {
       pdfInput.value = '';
       return;
+    }
+
+    // Închide modalul după validare și înainte de procesare (doar dacă există fișiere valide)
+    if (uploadPopup && validFiles.length > 0) {
+      uploadPopup.classList.remove('active');
     }
 
     // Adaugă fișierele la listă și extrage textul
@@ -925,11 +1449,6 @@ function setupPdfUpload() {
     // Actualizează UI
     updatePdfFilesList();
     pdfInput.value = ''; // Reset pentru a permite selectarea acelorași fișiere din nou
-    
-    // Închide popup după selectarea fișierelor valide
-    if (validFiles.length > 0 && uploadPopup) {
-      uploadPopup.classList.remove('active');
-    }
   });
 
   console.log('✅ PDF Upload setup completat');
@@ -978,6 +1497,7 @@ async function extractImageText(file) {
   try {
     const formData = new FormData();
     formData.append('image', file);
+    formData.append('correct_text', 'true'); // Activează corecția automată
 
     const response = await fetch('http://127.0.0.1:3000/extract-image', {
       method: 'POST',
@@ -994,14 +1514,21 @@ async function extractImageText(file) {
       throw new Error(data.error);
     }
 
+    // Folosește textul corectat dacă există, altfel textul original
+    const finalText = data.corrected_text || data.text || '';
+    
+    if (!finalText || !finalText.trim()) {
+      throw new Error('Nu s-a putut extrage text din imagine');
+    }
+
     // Adaugă textul la listă
     pdfTexts.push({
       filename: file.name,
-      text: data.text,
+      text: finalText,
       type: 'image'
     });
     
-    console.log(`🖼️ Text extras din imagine ${file.name}: ${data.text.length} caractere`);
+    console.log(`🖼️ Text extras din imagine ${file.name}: ${finalText.length} caractere${data.corrected_text ? ' (corectat)' : ''}`);
     
   } catch (error) {
     console.error(`Eroare la extragerea textului din ${file.name}:`, error);

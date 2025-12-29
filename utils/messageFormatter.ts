@@ -144,7 +144,39 @@ function formatNumberedLists(text: string): string {
         inList = true;
         listHTML = '<ul class="message-numbered-list">';
       }
-      listHTML += `<li>${numberedMatch[2]}</li>`;
+      const number = parseInt(numberedMatch[1], 10);
+      let content = numberedMatch[2];
+      
+      // Procesăm textul bold din conținut (înainte de escape)
+      // Folosim placeholders pentru a păstra tag-urile strong
+      const boldPlaceholders: Array<{ placeholder: string; text: string }> = [];
+      let placeholderIndex = 0;
+      
+      // Găsim toate match-urile bold și le înlocuim cu placeholders
+      content = content.replace(/\*\*([^*]+)\*\*/g, (match, boldText) => {
+        const placeholder = `__BOLD_${placeholderIndex}__`;
+        boldPlaceholders.push({ placeholder, text: boldText });
+        placeholderIndex++;
+        return placeholder;
+      });
+      
+      // Escape HTML pentru securitate
+      content = content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      
+      // Restaurăm bold tags (după escape)
+      boldPlaceholders.forEach(({ placeholder, text }) => {
+        const escapedText = text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        content = content.replace(placeholder, `<strong>${escapedText}</strong>`);
+      });
+      
+      // Păstrăm numărul original din text folosind data attribute
+      listHTML += `<li data-number="${number}">${content}</li>`;
     } else {
       if (inList) {
         listHTML += '</ul>';
