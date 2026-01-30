@@ -38,13 +38,13 @@ export function middleware(request: NextRequest) {
     }
   }
   
-  // Dacă utilizatorul este autentificat și încearcă să acceseze login/register, redirect la admin
+  // Dacă utilizatorul este autentificat și încearcă să acceseze login/register, redirect la contul cu chaturile
   if (isPublicRoute && (pathname === '/login' || pathname === '/register')) {
     const token = request.cookies.get('auth_token')?.value || 
                   request.headers.get('authorization')?.replace('Bearer ', '');
     
     if (token) {
-      return NextResponse.redirect(new URL('/admin', request.url));
+      return NextResponse.redirect(new URL('/chat/1', request.url));
     }
   }
   

@@ -3,12 +3,12 @@ import { useState, useCallback, useEffect } from 'react';
 export interface PDFFile {
   file: File;
   filename: string;
-  type: 'pdf' | 'image';
+  type: 'pdf' | 'image' | 'docx';
 }
 
 interface StoredPDFFile {
   filename: string;
-  type: 'pdf' | 'image';
+  type: 'pdf' | 'image' | 'docx';
   data: string; // base64
   mimeType: string;
 }
@@ -130,9 +130,11 @@ export function usePDFUpload() {
     }
 
     // Determine file type based on MIME type or extension
-    const fileType: 'pdf' | 'image' = 
+    const fileType: 'pdf' | 'image' | 'docx' = 
       file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
         ? 'pdf'
+        : file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.toLowerCase().endsWith('.docx')
+        ? 'docx'
         : 'image';
     
     const pdfFile: PDFFile = {

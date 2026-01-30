@@ -126,3 +126,61 @@ export async function extractImageText(
   }
 }
 
+/**
+ * Extracts text from a DOCX file using the backend API
+ * @param file - The DOCX file to extract text from
+ * @returns A promise that resolves to the extracted text
+ */
+export async function extractDocxText(file: File): Promise<string> {
+  if (!file) {
+    throw new Error('Fișierul DOCX nu este valid');
+  }
+
+  const isDocx = file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+    file.name.toLowerCase().endsWith('.docx');
+
+  if (!isDocx) {
+    throw new Error('Fișierul trebuie să fie DOCX');
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('docx', file);
+
+    // Creează AbortController pentru timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 secunde
+
+    const response = await fetch(`${BACKEND_URL}/extract-docx`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Eroare necunoscută' }));
+      throw new Error(errorData.error || `Eroare HTTP: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    if (!data.text || !data.text.trim()) {
+      throw new Error('Nu s-a putut extrage text din DOCX');
+    }
+
+    return data.text.trim();
+  } catch (error) {
+    console.error('Error extracting DOCX text:', error);
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Eroare necunoscută la extragerea textului din DOCX');
+  }
+}
+

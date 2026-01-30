@@ -7,7 +7,18 @@ import { formatMessageText } from '@/utils/messageFormatter';
 import { speakText } from '@/utils/textToSpeech';
 import { getUILocale } from '@/utils/locale';
 import { copyToClipboard } from '@/utils/clipboard';
-import { detectRAGDocumentRequest, listRAGFiles, downloadRAGFile } from '@/utils/pdfDownload';
+import {
+  detectRAGDocumentRequest,
+  listRAGFiles,
+  downloadRAGFile,
+  parseGeneratePDFTag,
+  stripGeneratePDFTag,
+  getChatHistory,
+  extractDocumentData,
+  generateDocumentFromTemplate,
+} from '@/utils/pdfDownload';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 import { useAuth } from '@/contexts/AuthContext';
 import styles from './Message.module.css';
 
@@ -23,35 +34,36 @@ export default function Message({ message, isStreaming = false, chatId, sessionI
   const [isCopied, setIsCopied] = useState(false);
   const [ragFilenames, setRagFilenames] = useState<string[]>([]);
   const [isDownloadingRAG, setIsDownloadingRAG] = useState<{ [filename: string]: boolean }>({});
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const router = useRouter();
   const { token } = useAuth();
   const textElementRef = useRef<HTMLDivElement>(null);
   const lastContentRef = useRef<string>('');
 
+  const displayContent = message.content ? stripGeneratePDFTag(message.content) : '';
+  const generatePdfFilename = message.content ? parseGeneratePDFTag(message.content) : null;
+
   // Actualizează DOM-ul când se schimbă conținutul
   useLayoutEffect(() => {
     if (!textElementRef.current) return;
     
-    if (message.content) {
-      // Verifică dacă conținutul s-a schimbat
-      if (lastContentRef.current !== message.content) {
-        // Aplicăm formatarea completă (și în timpul streaming-ului pentru efect vizual)
-        textElementRef.current.innerHTML = formatMessageText(message.content);
-        lastContentRef.current = message.content;
+    if (displayContent) {
+      if (lastContentRef.current !== displayContent) {
+        textElementRef.current.innerHTML = formatMessageText(displayContent);
+        lastContentRef.current = displayContent;
       }
-    } else if (!message.content && !isStreaming) {
-      // Șterge conținutul dacă nu există
+    } else if (!displayContent && !isStreaming) {
       textElementRef.current.innerHTML = '';
       lastContentRef.current = '';
     }
-  }, [message.content, isStreaming]);
+  }, [displayContent, isStreaming]);
 
   // Memoizează formatarea textului pentru afișare inițială
   const formattedContent = useMemo(() => {
-    if (!message.content) return '';
-    if (isStreaming) return ''; // Nu folosim formatare în timpul streaming-ului
-    return formatMessageText(message.content);
-  }, [message.content, isStreaming]);
+    if (!displayContent) return '';
+    if (isStreaming) return '';
+    return formatMessageText(displayContent);
+  }, [displayContent, isStreaming]);
 
   // Resetăm ragFilenames când apare un mesaj nou de la utilizator
   useEffect(() => {
@@ -63,6 +75,11 @@ export default function Message({ message, isStreaming = false, chatId, sessionI
   // Detectează dacă mesajul conține cerere de descărcare document RAG
   useEffect(() => {
     if (message.role === 'assistant' && message.content && !isStreaming) {
+      // Când există buton "Generează și descarcă PDF" ([GENERATE_PDF: ...]), nu afișa și lista de documente RAG — utilizatorul are deja documentul cerut
+      if (parseGeneratePDFTag(message.content)) {
+        setRagFilenames([]);
+        return;
+      }
       // Detectează cereri explicite pentru documente RAG
       const detectedRAGFile = detectRAGDocumentRequest(message.content);
       
@@ -408,6 +425,27 @@ export default function Message({ message, isStreaming = false, chatId, sessionI
     }
   };
 
+  const handleGeneratePdf = async () => {
+    if (!chatId || !generatePdfFilename) return;
+    setIsGeneratingPdf(true);
+    try {
+      const conversation = await getChatHistory(chatId, sessionId || null, token || undefined);
+      const { data } = await extractDocumentData(chatId, generatePdfFilename, conversation, token || undefined);
+      const { pdf_url } = await generateDocumentFromTemplate(chatId, generatePdfFilename, data, token || undefined);
+      if (pdf_url) {
+        const fullUrl = pdf_url.startsWith('http') ? pdf_url : `${BACKEND_URL}${pdf_url}`;
+        window.open(fullUrl, '_blank');
+      } else {
+        alert('Documentul a fost generat dar link-ul PDF nu este disponibil.');
+      }
+    } catch (error) {
+      console.error('Eroare la generarea PDF:', error);
+      alert(error instanceof Error ? error.message : 'Nu s-a putut genera PDF-ul.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   if (message.role === 'user') {
     return (
       <div className={`${styles.message} ${styles.user}`}>
@@ -430,6 +468,12 @@ export default function Message({ message, isStreaming = false, chatId, sessionI
                         <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                         <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
+                    ) : file.type === 'docx' ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M8 12H16M8 16H16M8 8H12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
                     ) : (
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -439,7 +483,9 @@ export default function Message({ message, isStreaming = false, chatId, sessionI
                     )}
                     <div className={styles.fileMessageInfo}>
                       <div className={styles.fileMessageName}>{file.filename}</div>
-                      <div className={styles.fileMessageType}>{file.type === 'pdf' ? 'PDF' : 'IMAGINE'}</div>
+                      <div className={styles.fileMessageType}>
+                        {file.type === 'pdf' ? 'PDF' : file.type === 'docx' ? 'DOCX' : 'IMAGINE'}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -480,6 +526,37 @@ export default function Message({ message, isStreaming = false, chatId, sessionI
                 <span className={styles.typingCursor}>|</span>
               )}
             </div>
+            {/* Buton Generează PDF când LLM a inclus [GENERATE_PDF: filename] */}
+            {generatePdfFilename && !isStreaming && chatId && (
+              <div style={{ marginTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={handleGeneratePdf}
+                  disabled={isGeneratingPdf}
+                  className={styles.downloadButton}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 18px',
+                    backgroundColor: isGeneratingPdf ? '#9ca3af' : '#374151',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    cursor: isGeneratingPdf ? 'wait' : 'pointer',
+                  }}
+                >
+                  {isGeneratingPdf ? 'Se generează...' : 'Generează și descarcă PDF'}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                </button>
+              </div>
+            )}
             {/* Afișează fișierele generate (dacă există) */}
             {message.files && message.files.some(f => f.generated) && (
               <div style={{ 
@@ -531,6 +608,12 @@ export default function Message({ message, isStreaming = false, chatId, sessionI
                             <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                             <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                           </svg>
+                        ) : file.type === 'docx' ? (
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ color: '#6b7280' }}>
+                            <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M8 12H16M8 16H16M8 8H12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
                         ) : (
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ color: '#6b7280' }}>
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -567,7 +650,7 @@ export default function Message({ message, isStreaming = false, chatId, sessionI
                           letterSpacing: '0.5px',
                           fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
                         }}>
-                          {file.type === 'pdf' ? 'PDF' : 'IMAGINE'}
+                          {file.type === 'pdf' ? 'PDF' : file.type === 'docx' ? 'DOCX' : 'IMAGINE'}
                         </div>
                       </div>
                       

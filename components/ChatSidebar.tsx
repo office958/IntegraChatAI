@@ -191,8 +191,8 @@ export default function ChatSidebar({ isOpen, onToggle, currentChatId, currentSe
         router.push(`/chat/${currentChatId}`);
       }
     } else {
-      // Dacă nu avem chatbot selectat, navighează la admin
-      router.push('/admin');
+      // Dacă nu avem chatbot selectat, navighează la primul chat (contul cu chaturile)
+      router.push('/chat/1');
     }
   };
 

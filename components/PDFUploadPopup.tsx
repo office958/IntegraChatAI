@@ -82,7 +82,7 @@ export default function PDFUploadPopup({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,image/*"
+            accept=".pdf,.docx,image/*"
             multiple
             onChange={handleFileChange}
             style={{ display: 'none' }}
@@ -99,11 +99,11 @@ export default function PDFUploadPopup({
               <path d="M7 10L12 15L17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M12 15V3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            Selectează fișiere PDF sau imagini
+            Selectează fișiere PDF, DOCX sau imagini
           </button>
           
           <p style={{ margin: 0, fontSize: '14px', color: '#6b7280', textAlign: 'center' }}>
-            Suportă PDF și imagini (JPG, PNG, etc.)
+            Suportă PDF, DOCX și imagini (JPG, PNG, etc.)
           </p>
         </div>
       </div>

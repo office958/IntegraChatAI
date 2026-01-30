@@ -634,12 +634,76 @@ async function startStreamingResponse(message, pdfFilesToUse = null, pdfTextsToU
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
+    // OPTIMIZARE CRITICĂ: Creează mesajul IMEDIAT, înainte de a primi primul chunk
+    // Astfel utilizatorul vede că răspunsul a început să se genereze
+    chatContainer.classList.add('has-messages');
+    
+    // Ascunde mesajul de bun venit
+    const welcomeMessage = chatMessages.querySelector('.welcome-message');
+    if (welcomeMessage) {
+      welcomeMessage.style.display = 'none';
+    }
+    
+    // Creează mesajul div-ul IMEDIAT cu un indicator de typing
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message ai';
+    messageDiv.innerHTML = `
+      <div class="message-content">
+        <div class="message-text"><span class="typing-indicator">●</span><span style="opacity: 0.6; margin-left: 8px; font-size: 0.9em;">Se generează răspunsul...</span></div>
+        <div class="message-footer">
+          <button type="button" class="action-btn tts-btn" title="Citește mesajul (Text to Speech)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M11 5L6 9H2V15H6L11 19V5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M19.07 4.93C20.9447 6.80528 21.9979 9.34836 21.9979 12C21.9979 14.6516 20.9447 17.1947 19.07 19.07M15.54 8.46C16.4774 9.39764 17.0039 10.6692 17.0039 12C17.0039 13.3308 16.4774 14.6024 15.54 15.54" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button type="button" class="action-btn copy-btn" title="Copiază mesajul">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M5 15H4C2.89543 15 2 14.1046 2 13V4C2 2.89543 2.89543 2 4 2H13C14.1046 2 15 2.89543 15 4V5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    `;
+    chatMessages.appendChild(messageDiv);
+    const messageContent = messageDiv.querySelector('.message-text');
+    hideTypingIndicator();
+    scrollToBottom(); // Scroll imediat pentru a vedea mesajul
+    
+    // Adaugă event listener pentru copiere
+    const copyBtn = messageDiv.querySelector('.copy-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(accumulatedText);
+          copyBtn.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          `;
+          copyBtn.style.color = '#10b981';
+          setTimeout(() => {
+            copyBtn.innerHTML = `
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M5 15H4C2.89543 15 2 14.1046 2 13V4C2 2.89543 2.89543 2 4 2H13C14.1046 2 15 2.89543 15 4V5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            `;
+            copyBtn.style.color = '';
+          }, 2000);
+        } catch (err) {
+          console.error('Eroare la copiere:', err);
+        }
+      });
+    }
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let accumulatedText = '';
-
-    let messageDiv = null;
-    let messageContent = null;
+    let isFirstChunk = true; // Flag pentru primul chunk
+    let lastUpdateTime = 0;
+    const UPDATE_INTERVAL = 16; // ~60fps pentru smooth updates (doar după primul chunk)
 
     while (true) {
       const { done, value } = await reader.read();
@@ -648,78 +712,28 @@ async function startStreamingResponse(message, pdfFilesToUse = null, pdfTextsToU
       const chunk = decoder.decode(value, { stream: true });
       accumulatedText += chunk;
 
-      if (!messageDiv) {
-        // Adaugă clasa pentru a indica că există mesaje
-        chatContainer.classList.add('has-messages');
-        
-        // Ascunde mesajul de bun venit când începe streaming-ul
-        const welcomeMessage = chatMessages.querySelector('.welcome-message');
-        if (welcomeMessage) {
-          welcomeMessage.style.display = 'none';
+      // OPTIMIZARE CRITICĂ: Afișează IMEDIAT primul chunk fără throttling
+      // După primul chunk, folosește throttling pentru smooth rendering
+      const now = performance.now();
+      const shouldUpdate = isFirstChunk || (now - lastUpdateTime >= UPDATE_INTERVAL) || done;
+      
+      if (shouldUpdate) {
+        // Elimină indicatorul de typing la primul chunk
+        if (isFirstChunk && accumulatedText.trim().length > 0) {
+          isFirstChunk = false;
+          messageContent.innerHTML = ''; // Șterge indicatorul
         }
         
-        messageDiv = document.createElement('div');
-        messageDiv.className = 'message ai';
-        messageDiv.innerHTML = `
-          <div class="message-content">
-            <div class="message-text"></div>
-            <div class="message-footer">
-              <button type="button" class="action-btn tts-btn" title="Citește mesajul (Text to Speech)">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M11 5L6 9H2V15H6L11 19V5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M19.07 4.93C20.9447 6.80528 21.9979 9.34836 21.9979 12C21.9979 14.6516 20.9447 17.1947 19.07 19.07M15.54 8.46C16.4774 9.39764 17.0039 10.6692 17.0039 12C17.0039 13.3308 16.4774 14.6024 15.54 15.54" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
-              <button type="button" class="action-btn copy-btn" title="Copiază mesajul">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M5 15H4C2.89543 15 2 14.1046 2 13V4C2 2.89543 2.89543 2 4 2H13C14.1046 2 15 2.89543 15 4V5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-        `;
-        chatMessages.appendChild(messageDiv);
-        messageContent = messageDiv.querySelector('.message-text');
-        hideTypingIndicator();
+        // Formatează textul pentru afișare frumoasă
+        messageContent.innerHTML = formatMessageText(accumulatedText);
         
-        // Adaugă event listener pentru copiere când se termină streaming-ul
-        const copyBtn = messageDiv.querySelector('.copy-btn');
-        if (copyBtn) {
-          copyBtn.addEventListener('click', async () => {
-            try {
-              await navigator.clipboard.writeText(accumulatedText);
-              copyBtn.innerHTML = `
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              `;
-              copyBtn.style.color = '#10b981';
-              setTimeout(() => {
-                copyBtn.innerHTML = `
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M5 15H4C2.89543 15 2 14.1046 2 13V4C2 2.89543 2.89543 2 4 2H13C14.1046 2 15 2.89543 15 4V5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                `;
-                copyBtn.style.color = '';
-              }, 2000);
-            } catch (err) {
-              console.error('Eroare la copiere:', err);
-            }
-          });
-        }
+        // Detectează link-uri către PDF-uri generate în răspuns
+        detectAndDisplayGeneratedFiles(messageDiv, accumulatedText);
+        
+        scrollToBottom();
+        
+        lastUpdateTime = now;
       }
-
-      // Formatează textul pentru afișare frumoasă
-      messageContent.innerHTML = formatMessageText(accumulatedText);
-      
-      // Detectează link-uri către PDF-uri generate în răspuns
-      detectAndDisplayGeneratedFiles(messageDiv, accumulatedText);
-      
-      scrollToBottom();
-
-      await new Promise(resolve => setTimeout(resolve, 20));
     }
 
     // Adaugă event listener pentru TTS când se termină streaming-ul

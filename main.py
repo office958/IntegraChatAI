@@ -1,7 +1,9 @@
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
+import os
 import traceback
 
 # Importă router-urile
@@ -82,6 +84,40 @@ if PDF_GENERATOR_AVAILABLE:
 if PDF_FORM_AVAILABLE:
     app.include_router(pdf_form.router)
 
+# Director pentru PDF-uri generate din template-uri (cereri completate)
+os.makedirs("pdf_generated", exist_ok=True)
+app.mount("/pdf_generated", StaticFiles(directory="pdf_generated"), name="pdf_generated")
+
+# Warm-up model la startup (opțional - poate fi dezactivat)
+@app.on_event("startup")
+async def warmup_models():
+    """Pre-încarcă modelele comune la startup pentru a reduce latența primului request"""
+    try:
+        import asyncio
+        from core.cache import get_cached_config
+        from core.config import ollama, get_ollama_performance_options
+        
+        # Așteaptă puțin pentru ca serverul să fie complet inițializat
+        await asyncio.sleep(2)
+        
+        # Încearcă să pre-încărce modelul default (dacă există un chat default)
+        try:
+            # Poți adăuga aici logica pentru a pre-încărca modelele comune
+            # De exemplu, pentru chat_id=1 sau pentru toate chaturile active
+            print("🔥 Warm-up modele la startup (opțional)...")
+            config = get_cached_config("1")
+            if config:
+                model = config.get("model")
+                if model:
+                    options = get_ollama_performance_options({"num_predict": 5})
+                    ollama.chat(model=model, messages=[{"role": "user", "content": "warmup"}], 
+                               stream=False, options=options)
+                    print(f"✅ Model {model} pre-încărcat")
+        except Exception as e:
+            print(f"⚠️ Warm-up la startup a eșuat (normal dacă nu există chat-uri): {e}")
+    except Exception as e:
+        print(f"⚠️ Eroare la warm-up startup: {e}")
+
 if __name__ == "__main__":
     import uvicorn
     # Configurare pentru a preveni oprirea serverului la erori
@@ -91,5 +127,8 @@ if __name__ == "__main__":
         port=8000,
         timeout_keep_alive=120,  # Timeout mai mare pentru procesare OCR (2 minute)
         timeout_graceful_shutdown=30,  # Timp pentru închidere grațioasă
-        log_level="info"
+        log_level="info",
+        # Optimizări pentru streaming rapid
+        limit_concurrency=1000,  # Permite mai multe conexiuni simultane
+        limit_max_requests=10000,  # Limitează numărul de request-uri pentru stabilitate
     )

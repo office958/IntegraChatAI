@@ -68,12 +68,17 @@ Răspuns (doar JSON):"""
     
     try:
         messages = [{"role": "user", "content": prompt}]
+        import os
+        num_threads = int(os.getenv('OLLAMA_NUM_THREADS', '4'))
         response = ollama.chat(
             model=model,
             messages=messages,
             options={
                 "temperature": 0.3,  # Determinist pentru corecții precise
-                "num_predict": 2000
+                "top_p": 0.85,  # Redus pentru viteză
+                "top_k": 20,  # Adăugat pentru viteză
+                "num_predict": 1500,  # Redus pentru viteză (era 2000)
+                "num_thread": num_threads,  # Optimizare CPU
             }
         )
         
@@ -173,12 +178,17 @@ Răspuns (doar JSON):"""
     
     try:
         messages = [{"role": "user", "content": prompt}]
+        import os
+        num_threads = int(os.getenv('OLLAMA_NUM_THREADS', '4'))
         response = ollama.chat(
             model=model,
             messages=messages,
             options={
                 "temperature": 0.2,
-                "num_predict": 1500
+                "top_p": 0.85,  # Redus pentru viteză
+                "top_k": 20,  # Adăugat pentru viteză
+                "num_predict": 1200,  # Redus pentru viteză (era 1500)
+                "num_thread": num_threads,  # Optimizare CPU
             }
         )
         

@@ -18,11 +18,17 @@ from core.conversation import get_tenant_id_from_chat_id, create_default_config
 from core.prompt import enhance_prompt_for_autofill
 from core.config import ollama
 from core.title_generator import generate_chat_title
+from core.llm_extractor import extract_data_for_template
+from core.document_generator import generate_document_from_template
+from database import get_document_template, list_document_templates
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 # === Stream răspuns cu prompt îmbunătățit ===
-async def stream_response(messages, model, page_context=None, pdf_text=None, rag_content=None, institution_data=None, rag_search_query=None, tenant_id=None):
+def stream_response(messages, model, page_context=None, pdf_text=None, rag_content=None, institution_data=None, rag_search_query=None, tenant_id=None, document_templates=None):
+    import time
+    prompt_start = time.time()
+    
     # Îmbunătățește primul mesaj (system prompt) dacă există context
     if len(messages) > 0:
         messages[0]['content'] = enhance_prompt_for_autofill(
@@ -32,38 +38,64 @@ async def stream_response(messages, model, page_context=None, pdf_text=None, rag
             rag_content,
             institution_data,
             rag_search_query,
-            tenant_id
+            tenant_id,
+            document_templates
         )
     
-    # Parametrii optimizați pentru viteză
-    # Folosim parametri mai agresivi pentru a accelera generarea
-    options = {
-        "temperature": 0.3,  # Determinist dar nu prea rigid
-        "top_p": 0.9,  # Balanță între calitate și viteză
-        "top_k": 40,  # Limitează opțiunile pentru viteză
-        "num_predict": 3000,  # Suficient pentru răspunsuri complete
+    prompt_time = time.time() - prompt_start
+    if prompt_time > 0.3:
+        print(f"⚠️ Construirea prompt-ului a durat {prompt_time:.2f}s (ar trebui < 0.3s)")
+    else:
+        print(f"✅ Prompt construit în {prompt_time:.3f}s")
+    
+    # Parametrii optimizați pentru viteză maximă
+    # Optimizat pentru performanță pe laptop (CPU sau GPU slab)
+    from core.config import get_ollama_performance_options
+    
+    base_options = {
+        "temperature": 0.1,  # Redus și mai mult pentru viteză maximă
+        "num_predict": 400,  # Redus și mai mult pentru răspunsuri mai rapide
         "repeat_penalty": 1.1,  # Evită repetări
+        "tfs_z": 1.0,  # Tail free sampling pentru viteză
+        "typical_p": 1.0,  # Typical sampling pentru viteză
+        "top_k": 5,  # Redus și mai mult pentru viteză maximă
+        "top_p": 0.6,  # Redus și mai mult pentru viteză maximă
+        "numa": False,  # NUMA poate încetini
     }
     
     # Dacă există context de formular, optimizează mai mult pentru JSON
     if page_context and page_context.get("has_form"):
-        options.update({
-            "temperature": 0.2,  # Foarte determinist pentru JSON rapid
-            "top_p": 0.85,
-            "top_k": 20,
-            "num_predict": 2000,
+        base_options.update({
+            "temperature": 0.05,  # Foarte determinist pentru JSON rapid
+            "top_p": 0.5,  # Redus și mai mult pentru viteză maximă
+            "top_k": 3,  # Redus și mai mult pentru viteză
+            "num_predict": 200,  # Redus și mai mult pentru JSON-uri scurte
         })
     
+    # Aplică optimizările de performanță
+    options = get_ollama_performance_options(base_options)
+    
+    ollama_start = time.time()
     print(f"🤖 Apel Ollama: model={model}, {len(messages)} mesaje, options={options}")
     
     try:
+        # OPTIMIZARE: Folosește keep_alive pentru a păstra modelul în memorie și reduce latența
+        # keep_alive este setat în options prin get_ollama_performance_options
         stream = ollama.chat(
             model=model, 
             messages=messages, 
             stream=True,
             options=options
         )
-        print(f"✅ Stream Ollama creat cu succes")
+        ollama_connect_time = time.time() - ollama_start
+        if ollama_connect_time > 0.1:
+            print(f"⚠️ Conexiunea la Ollama a durat {ollama_connect_time:.2f}s (ar trebui < 0.1s)")
+        else:
+            print(f"✅ Stream Ollama creat cu succes ({ollama_connect_time:.3f}s)")
+        
+        # Log dimensiunea mesajelor pentru debugging
+        total_chars = sum(len(str(m.get('content', ''))) for m in messages)
+        print(f"📊 Context trimis: {len(messages)} mesaje, {total_chars} caractere totale")
     except Exception as e:
         print(f"❌ Eroare la apelul Ollama: {e}")
         import traceback
@@ -75,10 +107,19 @@ async def stream_response(messages, model, page_context=None, pdf_text=None, rag
     chunk_count = 0
     has_content = False
     total_content = ""
+    first_chunk_time = None
     
     try:
         print(f"🔄 Începe streaming de la Ollama...")
         for chunk in stream:
+            # Măsoară timpul primului chunk pentru a detecta latența
+            if first_chunk_time is None and chunk_count == 0:
+                first_chunk_time = time.time()
+                first_chunk_delay = first_chunk_time - ollama_start
+                if first_chunk_delay > 1.0:
+                    print(f"⚠️ Primul chunk a durat {first_chunk_delay:.2f}s (ar trebui < 1s)")
+                else:
+                    print(f"✅ Primul chunk primit în {first_chunk_delay:.3f}s")
             chunk_count += 1
             
             # Convert chunk to dict if it's a Pydantic model
@@ -89,19 +130,6 @@ async def stream_response(messages, model, page_context=None, pdf_text=None, rag
                 chunk_dict = chunk.dict()
             elif isinstance(chunk, dict):
                 chunk_dict = chunk
-            
-            # Log primele câteva chunk-uri pentru debugging
-            if chunk_count <= 3:
-                chunk_info = f"type={type(chunk).__name__}"
-                if chunk_dict:
-                    chunk_info += f", keys={list(chunk_dict.keys())}"
-                    if "message" in chunk_dict:
-                        msg = chunk_dict["message"]
-                        if isinstance(msg, dict):
-                            chunk_info += f", message_keys={list(msg.keys()) if msg else 'None'}"
-                        elif hasattr(msg, '__dict__'):
-                            chunk_info += f", message_attrs={list(msg.__dict__.keys()) if msg else 'None'}"
-                print(f"📦 Chunk {chunk_count}: {chunk_info}")
             
             # Extrage conținutul din chunk - folosește o abordare unificată
             content = None
@@ -144,22 +172,34 @@ async def stream_response(messages, model, page_context=None, pdf_text=None, rag
             elif hasattr(chunk, 'done'):
                 done = chunk.done
             
-            # Debug pentru primele chunk-uri
-            if chunk_count <= 3:
-                content_preview = content[:50] + "..." if content and len(content) > 50 else (content if content else "None")
-                print(f"🔍 Chunk {chunk_count} - content={content_preview}, done={done}")
-            
+            # OPTIMIZARE: Trimite imediat fiecare chunk fără buffer pentru viteză maximă
             if content:
                 has_content = True
                 total_content += content
-                # Trimite conținutul direct (fără delay pentru fiecare caracter) pentru viteză mai mare
-                yield content
-                # Delay minim doar pentru a permite browser-ului să proceseze
-                await asyncio.sleep(0.001)
+                
+                # Trimite imediat fără buffer pentru streaming instant
+                try:
+                    yield content
+                except (BrokenPipeError, ConnectionResetError, OSError) as e:
+                    # Clientul s-a deconectat, oprește streaming-ul
+                    print(f"⚠️ Client deconectat în timpul streaming-ului: {e}")
+                    break
+                except Exception as e:
+                    # OPTIMIZARE: Ignoră erorile de socket non-critice (apar când clientul se deconectează)
+                    error_str = str(e).lower()
+                    if any(keyword in error_str for keyword in ["socket", "connection", "broken pipe", "connection reset"]):
+                        # Ignoră erorile de socket non-critice - clientul probabil s-a deconectat
+                        # Nu logăm pentru a evita spam-ul în log-uri
+                        break
+                    else:
+                        # Alte erori - loghează doar dacă nu sunt de socket
+                        print(f"⚠️ Eroare la trimiterea chunk-ului: {e}")
+                        break
             
             # Verifică dacă stream-ul s-a terminat
             if done:
-                print(f"✅ Streaming terminat: {chunk_count} chunk-uri, {len(total_content)} caractere")
+                total_stream_time = time.time() - ollama_start
+                print(f"✅ Streaming terminat: {chunk_count} chunk-uri, {len(total_content)} caractere în {total_stream_time:.2f}s")
                 break
     except Exception as e:
         print(f"❌ Eroare la streaming de la Ollama: {e}")
@@ -177,6 +217,8 @@ async def stream_response(messages, model, page_context=None, pdf_text=None, rag
 
 @router.post("/{chat_id}/ask")
 async def ask_dynamic(chat_id: str, request: ChatRequest, current_user: dict = Depends(get_current_user)):
+    import time
+    start_time = time.time()
     print("\n" + "=" * 80)
     print("🚀🚀🚀 ask_dynamic APELAT 🚀🚀🚀")
     print("=" * 80)
@@ -402,14 +444,34 @@ async def ask_dynamic(chat_id: str, request: ChatRequest, current_user: dict = D
     tenant_id = get_tenant_id_from_chat_id(chat_id)
     institution_data = config.get("institution")
     
+    # Obține client_chat_id pentru template-uri documente
+    try:
+        client_chat_id = int(chat_id)
+    except ValueError:
+        client = get_client_chat(chat_id)
+        client_chat_id = client["id"] if client else None
+    document_templates = list_document_templates(client_chat_id) if client_chat_id else []
+    
     # Construiește mesajele cu istoricul complet
     # System prompt-ul va fi generat dinamic în stream_response
-    messages = [{"role": "system", "content": config["prompt"]}]
+    # OPTIMIZARE CRITICĂ: Limitează prompt-ul de bază la 200 caractere pentru viteză maximă
+    base_prompt = config["prompt"]
+    if len(base_prompt) > 200:
+        base_prompt = base_prompt[:200] + "..."
+    messages = [{"role": "system", "content": base_prompt}]
     
     # Procesează istoricul pentru a include informații despre fișiere în context
+    # OPTIMIZARE: Folosim doar ultimul mesaj pentru viteză maximă (reduce context-ul cu 50%)
+    recent_history = updated_history[-1:] if len(updated_history) > 1 else updated_history
+    
     processed_history = []
-    for msg in updated_history:
-        processed_msg = {"role": msg["role"], "content": msg["content"]}
+    for msg in recent_history:
+        # OPTIMIZARE CRITICĂ: Limitează conținutul mesajului la 50 caractere pentru viteză maximă
+        content = msg.get("content", "")
+        if len(content) > 50:
+            content = content[:50] + "..."
+        
+        processed_msg = {"role": msg["role"], "content": content}
         
         # Dacă mesajul are file_info, adaugă informații despre fișier în conținut pentru LLM
         if msg.get('file_info') and msg['file_info'].get('type') == 'file':
@@ -417,14 +479,14 @@ async def ask_dynamic(chat_id: str, request: ChatRequest, current_user: dict = D
             filename = file_info.get('filename', 'necunoscut')
             file_type = file_info.get('fileType', 'pdf')
             
-            # Adaugă informații despre fișier în conținutul mesajului pentru LLM
-            file_context = f"\n[Fișier atașat: {filename} ({file_type})"
+            # Adaugă informații despre fișier în conținutul mesajului pentru LLM (reduc la 50 caractere pentru viteză, era 100)
+            file_context = f"\n[Fișier: {filename} ({file_type})"
             if file_info.get('text'):
-                file_context += f" - Text extras: {file_info['text'][:500]}..."
+                file_context += f" - Text: {file_info['text'][:50]}..."
             file_context += "]"
             
             # Adaugă contextul fișierului la conținutul mesajului
-            processed_msg["content"] = msg["content"] + file_context
+            processed_msg["content"] = processed_msg["content"] + file_context
         
         processed_history.append(processed_msg)
     
@@ -432,19 +494,27 @@ async def ask_dynamic(chat_id: str, request: ChatRequest, current_user: dict = D
     messages.extend(processed_history)
     
     # Combină textele din fișierele din istoric cu pdf_text din request (dacă există)
+    # OPTIMIZARE CRITICĂ: Limitează textul total la 500 caractere pentru viteză maximă
     combined_pdf_text = request.pdf_text or ""
     if files_text_from_history:
         history_files_text = "\n\n".join([
-            f"--- {f['filename']} (din istoric) ---\n{f['text']}"
-            for f in files_text_from_history
+            f"--- {f['filename']} (din istoric) ---\n{f['text'][:200]}"
+            for f in files_text_from_history[:1]  # Limitează la primul fișier
         ])
         if combined_pdf_text:
             combined_pdf_text = history_files_text + "\n\n--- Fișiere noi ---\n" + combined_pdf_text
         else:
             combined_pdf_text = history_files_text
     
-    # Log pentru debugging
-    print(f"💬 Conversație pentru {chat_id} (session: {session_id}, tenant: {tenant_id}): {len(conversation_history)} mesaje istorice + 1 mesaj nou = {len(updated_history)} mesaje totale în context")
+    # OPTIMIZARE CRITICĂ: Limitează textul total PDF la 500 caractere pentru viteză maximă
+    if len(combined_pdf_text) > 500:
+        combined_pdf_text = combined_pdf_text[:500] + "\n\n[... text trunchiat pentru viteză ...]"
+    
+    # Log pentru debugging cu detalii de performanță
+    pre_stream_time = time.time() - start_time
+    print(f"💬 Conversație pentru {chat_id} (session: {session_id}, tenant: {tenant_id}): {len(conversation_history)} mesaje istorice + 1 mesaj nou = {len(updated_history)} mesaje totale")
+    print(f"⏱️ Timp până la streaming: {pre_stream_time:.2f}s")
+    print(f"📊 Context: {len(recent_history)} mesaje recente, {len(combined_pdf_text)} caractere PDF, {len(rag_content) if rag_content else 0} fișiere RAG")
     
     # === STREAM RĂSPUNS CU COLECTARE ===
     # Folosim un wrapper care colectează răspunsul complet
@@ -456,18 +526,40 @@ async def ask_dynamic(chat_id: str, request: ChatRequest, current_user: dict = D
     
     async def stream_with_collection():
         nonlocal full_response
-        async for chunk in stream_response(
-            messages, 
-            config["model"], 
-            request.page_context, 
-            combined_pdf_text,  # Folosește combined_pdf_text care include și fișierele din istoric
-            rag_content,
-            institution_data,
-            rag_search_query,
-            tenant_id
-        ):
-            full_response += chunk
-            yield chunk
+        try:
+            # OPTIMIZARE: stream_response este generator sync, nu async
+            for chunk in stream_response(
+                messages, 
+                config["model"], 
+                request.page_context, 
+                combined_pdf_text,  # Folosește combined_pdf_text care include și fișierele din istoric
+                rag_content,
+                institution_data,
+                rag_search_query,
+                tenant_id,
+                document_templates
+            ):
+                full_response += chunk
+                try:
+                    yield chunk
+                except (BrokenPipeError, ConnectionResetError, OSError) as e:
+                    # Clientul s-a deconectat, oprește streaming-ul
+                    # Nu logăm pentru a evita spam-ul în log-uri
+                    break
+                except Exception as e:
+                    # OPTIMIZARE: Ignoră erorile de socket non-critice (apar când clientul se deconectează)
+                    error_str = str(e).lower()
+                    if any(keyword in error_str for keyword in ["socket", "connection", "broken pipe", "connection reset"]):
+                        # Ignoră erorile de socket non-critice - clientul probabil s-a deconectat
+                        break
+                    else:
+                        # Alte erori - loghează doar dacă nu sunt de socket
+                        print(f"⚠️ Eroare la streaming: {e}")
+                        break
+        except Exception as e:
+            print(f"❌ Eroare în stream_with_collection: {e}")
+            import traceback
+            traceback.print_exc()
         
         # După ce s-a terminat streaming-ul, salvează răspunsul în istoric
         if full_response.strip():
@@ -518,7 +610,15 @@ async def ask_dynamic(chat_id: str, request: ChatRequest, current_user: dict = D
    
     return StreamingResponse(
         stream_with_collection(), 
-        media_type="text/plain; charset=utf-8"
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Accel-Buffering": "no",  # Dezactivează buffering-ul pentru streaming rapid
+            "Connection": "keep-alive",
+            "Transfer-Encoding": "chunked",  # Asigură chunked encoding pentru streaming
+        }
     )
 
 @router.get("/{chat_id}/config")
@@ -551,6 +651,22 @@ async def get_chat_config(chat_id: str, current_user: dict = Depends(get_current
         del response_config["rag_content"]
     
     return JSONResponse(content=response_config)
+
+@router.get("/{chat_id}/templates")
+async def list_templates(chat_id: str, current_user: dict = Depends(get_current_user)):
+    """Listează template-urile de documente disponibile pentru acest tenant (cetățean / chat)."""
+    try:
+        client_chat_id = int(chat_id)
+    except ValueError:
+        db_config = get_client_chat(chat_id)
+        if not db_config:
+            return JSONResponse(status_code=404, content={"error": "Chat not found"})
+        client_chat_id = db_config.get("id")
+    config = get_cached_config(chat_id)
+    if not config:
+        return JSONResponse(status_code=404, content={"error": "Chat not found"})
+    templates = list_document_templates(client_chat_id)
+    return JSONResponse(content={"templates": templates})
 
 @router.post("/{chat_id}/session/create")
 async def create_session(chat_id: str, request: dict, current_user: dict = Depends(get_current_user)):
@@ -1302,3 +1418,154 @@ def generate_minimal_pdf(messages: list, chat_name: str) -> bytes:
     
     return pdf_content
 
+@router.post("/{chat_id}/extract-document-data")
+async def extract_document_data(chat_id: str, request: dict):
+    """Extrage date din conversație pentru completarea unui document"""
+    from core.conversation import get_tenant_id_from_chat_id
+    
+    conversation = request.get("conversation", [])
+    template_filename = request.get("template_filename")
+    
+    if not template_filename:
+        return JSONResponse(status_code=400, content={"error": "template_filename is required"})
+    
+    # Obține template-ul
+    try:
+        client_chat_id = int(chat_id)
+    except ValueError:
+        db_config = get_client_chat(chat_id)
+        if not db_config:
+            return JSONResponse(status_code=404, content={"error": "Chat not found"})
+        client_chat_id = db_config.get("id")
+    
+    template = get_document_template(client_chat_id, template_filename)
+    if not template:
+        return JSONResponse(status_code=404, content={"error": "Template not found"})
+    
+    # Extrage date cu LLM
+    try:
+        extracted_data = extract_data_for_template(
+            conversation,
+            template["variables"],
+            model=get_cached_config(chat_id).get("model", "qwen2.5:7b")
+        )
+        
+        return JSONResponse(content={
+            "success": True,
+            "data": extracted_data,
+            "template_name": template.get("template_name", template_filename)
+        })
+    except Exception as e:
+        import traceback
+        print(f"❌ Eroare la extragerea datelor: {traceback.format_exc()}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Error extracting data: {str(e)}"}
+        )
+
+@router.post("/{chat_id}/generate-document")
+async def generate_document(chat_id: str, request: dict):
+    """Generează documentul completat cu datele utilizatorului"""
+    from core.conversation import get_tenant_id_from_chat_id
+    
+    template_filename = request.get("template_filename")
+    user_data = request.get("user_data", {})
+    
+    if not template_filename:
+        return JSONResponse(status_code=400, content={"error": "template_filename is required"})
+    
+    # Obține template-ul
+    try:
+        client_chat_id = int(chat_id)
+    except ValueError:
+        db_config = get_client_chat(chat_id)
+        if not db_config:
+            return JSONResponse(status_code=404, content={"error": "Chat not found"})
+        client_chat_id = db_config.get("id")
+    
+    template = get_document_template(client_chat_id, template_filename)
+    if not template:
+        return JSONResponse(status_code=404, content={"error": "Template not found"})
+    
+    try:
+        # Generează documentul
+        result = generate_document_from_template(
+            template["template_html"],
+            template_filename,
+            user_data
+        )
+        
+        return JSONResponse(content={
+            "success": True,
+            "docx_url": result["docx_url"],
+            "pdf_url": result.get("pdf_url"),
+            "message": "Document generat cu succes"
+        })
+    except Exception as e:
+        import traceback
+        print(f"❌ Eroare la generarea documentului: {traceback.format_exc()}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Error generating document: {str(e)}"}
+        )
+
+@router.post("/{chat_id}/warmup")
+async def warmup_model(chat_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Pre-încarcă modelul în memorie pentru a reduce latența primului chunk.
+    Acest endpoint poate fi apelat la startup sau în background.
+    """
+    import time
+    from core.cache import get_cached_config
+    from core.config import get_ollama_performance_options, ollama
+    
+    try:
+        # Obține config-ul pentru chat
+        config = get_cached_config(chat_id)
+        if not config:
+            return JSONResponse(status_code=404, content={"error": "Chat not found"})
+        
+        model = config.get("model", "qwen2.5:7b")
+        
+        # Opțiuni optimizate pentru warm-up
+        base_options = {
+            "temperature": 0.1,
+            "num_predict": 10,  # Foarte scurt pentru warm-up
+            "top_k": 5,
+            "top_p": 0.6,
+        }
+        options = get_ollama_performance_options(base_options)
+        
+        print(f"🔥 Warm-up model: {model}")
+        warmup_start = time.time()
+        
+        # Face un request mic pentru a încărca modelul în memorie
+        try:
+            response = ollama.chat(
+                model=model,
+                messages=[{"role": "user", "content": "test"}],
+                stream=False,
+                options=options
+            )
+            warmup_time = time.time() - warmup_start
+            print(f"✅ Model {model} pre-încărcat în {warmup_time:.2f}s")
+            
+            return JSONResponse(content={
+                "success": True,
+                "model": model,
+                "warmup_time": warmup_time,
+                "message": f"Model {model} pre-încărcat cu succes"
+            })
+        except Exception as e:
+            print(f"⚠️ Eroare la warm-up model {model}: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Error warming up model: {str(e)}"}
+            )
+    except Exception as e:
+        import traceback
+        print(f"❌ Eroare la warm-up: {traceback.format_exc()}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Error: {str(e)}"}
+        )

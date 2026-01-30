@@ -10,12 +10,25 @@ from typing import List, Dict, Optional, Tuple
 from ollama import Client
 import hashlib
 
-# Conectare la Ollama pentru embeddings
-OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'localhost:11434')
-ollama = Client(host=OLLAMA_HOST)
+# Conectare la Ollama pentru embeddings cu fallback automat
+from core.config import get_ollama_client
+OLLAMA_HOST = os.getenv('OLLAMA_HOST', '127.0.0.1:11434')  # Folosim 127.0.0.1 în loc de localhost pentru viteză
+ollama = get_ollama_client(OLLAMA_HOST)
 
 # Model pentru embeddings (folosește același model ca pentru chat sau unul specializat)
 EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'nomic-embed-text')  # Model optimizat pentru embeddings
+DEFAULT_CHAT_MODEL = os.getenv('DEFAULT_CHAT_MODEL', 'qwen2.5:7b')  # Model default pentru chat
+
+# Lista de modele de embeddings de încercat (în ordine de preferință)
+EMBEDDING_MODELS_TO_TRY = [
+    'nomic-embed-text',
+    'all-minilm',
+    'mxbai-embed-large',
+    'bge-large',
+]
+
+# Cache pentru modelul de embeddings validat
+_validated_embedding_model = None
 
 # Director pentru stocarea vector stores per tenant
 VECTOR_STORE_DIR = "vector_stores"
@@ -24,22 +37,115 @@ def get_tenant_vector_store_path(tenant_id: str) -> str:
     """Returnează calea către vector store-ul unui tenant"""
     return os.path.join(VECTOR_STORE_DIR, tenant_id)
 
+def _find_available_embedding_model() -> Optional[str]:
+    """
+    Găsește primul model de embeddings disponibil din lista de modele.
+    Returnează None dacă nu găsește niciunul.
+    """
+    global _validated_embedding_model
+    
+    # Dacă deja am validat un model, îl folosim
+    if _validated_embedding_model:
+        return _validated_embedding_model
+    
+    # Listează modelele disponibile
+    try:
+        models_response = ollama.list()
+        available_models = []
+        
+        # Extrage numele modelelor din răspuns (poate fi Pydantic model, dict sau list)
+        models_list = []
+        if hasattr(models_response, 'models'):
+            models_list = models_response.models
+        elif isinstance(models_response, dict) and 'models' in models_response:
+            models_list = models_response['models']
+        elif isinstance(models_response, list):
+            models_list = models_response
+        
+        # Extrage numele modelului corect (poate fi atribut, dict key sau string)
+        for m in models_list:
+            model_name = None
+            if isinstance(m, dict):
+                model_name = m.get('name') or m.get('model')
+            elif hasattr(m, 'name'):
+                model_name = m.name
+            elif hasattr(m, 'model'):
+                model_name = m.model
+            elif isinstance(m, str):
+                model_name = m
+            
+            if model_name:
+                available_models.append(model_name)
+        
+        # Caută primul model de embeddings disponibil
+        for model_name_to_find in EMBEDDING_MODELS_TO_TRY:
+            # Verifică dacă modelul există (poate fi cu sau fără tag)
+            for available_name in available_models:
+                # Verifică dacă numele modelului se potrivește (cu sau fără tag)
+                if available_name == model_name_to_find or available_name.startswith(model_name_to_find + ':'):
+                    _validated_embedding_model = available_name
+                    print(f"✅ Model de embeddings găsit: {available_name}")
+                    return available_name
+        
+        # Dacă nu găsește un model de embeddings, încearcă să folosească modelul de chat
+        for available_name in available_models:
+            if available_name == DEFAULT_CHAT_MODEL or available_name.startswith(DEFAULT_CHAT_MODEL + ':'):
+                _validated_embedding_model = available_name
+                print(f"⚠️ Nu s-a găsit model de embeddings dedicat, folosind modelul de chat: {available_name}")
+                print(f"💡 Pentru performanță mai bună, instalează un model de embeddings: ollama pull nomic-embed-text")
+                return available_name
+                
+    except Exception as e:
+        print(f"⚠️ Eroare la listarea modelelor Ollama: {e}")
+    
+    return None
+
 def get_embedding(text: str) -> List[float]:
     """
     Obține embedding-ul pentru un text folosind Ollama.
     Dacă modelul de embeddings nu este disponibil, folosește un fallback.
     """
+    global _validated_embedding_model
+    
+    # Găsește un model disponibil
+    model_to_use = _validated_embedding_model or _find_available_embedding_model()
+    
+    # Dacă nu găsește niciun model, folosește modelul configurat sau default
+    if not model_to_use:
+        model_to_use = EMBEDDING_MODEL
+    
+    # Încearcă să obțină embedding-ul
     try:
-        # Încearcă să folosească modelul de embeddings
-        response = ollama.embeddings(model=EMBEDDING_MODEL, prompt=text)
+        response = ollama.embeddings(model=model_to_use, prompt=text)
         if response and 'embedding' in response:
             embedding = response['embedding']
             # Verifică că embedding-ul este valid
             if embedding and len(embedding) > 0:
                 return embedding
     except Exception as e:
-        print(f"⚠️ Eroare la obținerea embedding-ului cu {EMBEDDING_MODEL}: {e}")
-        print("💡 Folosind fallback: hash-based similarity")
+        # Dacă modelul configurat nu funcționează, încearcă să găsească altul
+        if model_to_use == EMBEDDING_MODEL:
+            print(f"⚠️ Modelul {EMBEDDING_MODEL} nu este disponibil: {e}")
+            # Resetează cache-ul și încearcă să găsească alt model
+            _validated_embedding_model = None
+            model_to_use = _find_available_embedding_model()
+            
+            if model_to_use and model_to_use != EMBEDDING_MODEL:
+                try:
+                    response = ollama.embeddings(model=model_to_use, prompt=text)
+                    if response and 'embedding' in response:
+                        embedding = response['embedding']
+                        if embedding and len(embedding) > 0:
+                            return embedding
+                except Exception as e2:
+                    print(f"⚠️ Eroare și cu modelul alternativ {model_to_use}: {e2}")
+        else:
+            print(f"⚠️ Eroare la obținerea embedding-ului cu {model_to_use}: {e}")
+    
+    # Mesaj informativ despre instalarea modelului
+    if not _validated_embedding_model or _validated_embedding_model == EMBEDDING_MODEL:
+        print(f"💡 Pentru embeddings semantice, instalează un model: ollama pull {EMBEDDING_MODEL}")
+        print("💡 Folosind fallback: hash-based similarity (nu este semantic)")
     
     # Fallback: folosește hash pentru simplitate (nu este semantic, dar funcționează)
     # În producție, ar trebui să folosești un model de embeddings real
@@ -180,19 +286,24 @@ class TenantRAGStore:
         """
         Caută în vector store și returnează top_k rezultate relevante.
         Returnează: [{filename, content, score}, ...]
+        OPTIMIZAT: Limitează la primele 30 embedding-uri pentru viteză maximă
         """
         if not self.embeddings:
             return []
+        
+        # OPTIMIZARE: Limitează la primele 30 embedding-uri pentru viteză maximă (era 50)
+        max_embeddings_to_check = min(30, len(self.embeddings))
         
         # Generează embedding pentru query
         query_embedding = get_embedding(query)
         query_dim = len(query_embedding)
         
         # Verifică și aliniază dimensiunile embedding-urilor existente
+        # OPTIMIZARE: Folosește doar primele max_embeddings_to_check pentru viteză
         valid_embeddings = []
         valid_indices = []
         
-        for i, doc_embedding in enumerate(self.embeddings):
+        for i, doc_embedding in enumerate(self.embeddings[:max_embeddings_to_check]):
             doc_dim = len(doc_embedding) if isinstance(doc_embedding, (list, np.ndarray)) else 0
             
             # Dacă dimensiunile nu se potrivesc, încearcă să le alinieze
@@ -222,15 +333,33 @@ class TenantRAGStore:
             print(f"⚠️ Nu există embedding-uri valide pentru search (query dim: {query_dim})")
             return []
         
-        # Calculează similarități doar pentru embedding-urile valide
-        similarities = []
-        for idx, doc_embedding in zip(valid_indices, valid_embeddings):
-            try:
-                similarity = cosine_similarity(query_embedding, doc_embedding)
-                similarities.append((idx, similarity))
-            except Exception as e:
-                print(f"⚠️ Eroare la calcularea similarității pentru embedding {idx}: {e}")
-                continue
+        # Calculează similarități doar pentru embedding-urile valide (optimizat cu numpy)
+        try:
+            # Convert to numpy arrays pentru viteză maximă
+            query_vec = np.array(query_embedding, dtype=np.float32)
+            doc_vecs = np.array(valid_embeddings, dtype=np.float32)
+            
+            # Calcul vectorizat pentru toate embedding-urile simultan (mult mai rapid)
+            dot_products = np.dot(doc_vecs, query_vec)
+            query_norm = np.linalg.norm(query_vec)
+            doc_norms = np.linalg.norm(doc_vecs, axis=1)
+            
+            # Evită împărțirea la zero
+            norms = query_norm * doc_norms
+            norms[norms == 0] = 1.0
+            
+            similarities = dot_products / norms
+            similarities = [(valid_indices[i], float(sim)) for i, sim in enumerate(similarities)]
+        except Exception as e:
+            # Fallback la metoda veche dacă numpy vectorizat eșuează
+            print(f"⚠️ Eroare la calcul vectorizat, folosind fallback: {e}")
+            similarities = []
+            for idx, doc_embedding in zip(valid_indices, valid_embeddings):
+                try:
+                    similarity = cosine_similarity(query_embedding, doc_embedding)
+                    similarities.append((idx, similarity))
+                except Exception as e2:
+                    continue
         
         # Sortează după similaritate
         similarities.sort(key=lambda x: x[1], reverse=True)

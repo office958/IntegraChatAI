@@ -152,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      router.push(redirect || '/admin');
+      router.push(redirect || '/chat/1');
     } catch (error) {
       console.error('Login error:', error);
       throw error;
@@ -221,7 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      router.push(redirect || '/admin');
+      router.push(redirect || '/chat/1');
     } catch (error) {
       console.error('Register error:', error);
       throw error;

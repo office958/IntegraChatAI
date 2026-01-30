@@ -48,12 +48,12 @@ export interface MessageType {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  files?: Array<{ filename: string; type: 'pdf' | 'image'; url?: string; generated?: boolean }>;
+  files?: Array<{ filename: string; type: 'pdf' | 'image' | 'docx'; url?: string; generated?: boolean }>;
 }
 
 export interface PDFFile {
   file: File;
   filename: string;
-  type: 'pdf' | 'image';
+  type: 'pdf' | 'image' | 'docx';
 }
 

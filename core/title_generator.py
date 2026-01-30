@@ -32,7 +32,9 @@ Titlul trebuie să fie:
 Răspunde DOAR cu titlul, fără explicații sau text suplimentar:"""
 
     try:
-        # Folosește Ollama pentru a genera titlul
+        # Folosește Ollama pentru a genera titlul (optimizat pentru viteză)
+        import os
+        num_threads = int(os.getenv('OLLAMA_NUM_THREADS', '4'))
         response = ollama.chat(
             model="qwen2.5:7b",  # Sau alt model disponibil
             messages=[
@@ -40,8 +42,10 @@ Răspunde DOAR cu titlul, fără explicații sau text suplimentar:"""
             ],
             options={
                 "temperature": 0.7,
-                "top_p": 0.9,
+                "top_p": 0.85,  # Redus pentru viteză
+                "top_k": 20,  # Adăugat pentru viteză
                 "num_predict": 50,  # Limitează la 50 tokens pentru titlu
+                "num_thread": num_threads,  # Optimizare CPU
             }
         )
         

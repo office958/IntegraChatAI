@@ -1,6 +1,28 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Headers pentru a bloca script-uri externe nedorite (CORS errors)
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn-icons-png.flaticon.com",
+              "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 https://fonts.googleapis.com",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com",
+              "img-src 'self' data: https: blob:",
+              "frame-src 'self' http://127.0.0.1:3000 http://localhost:3000",
+            ].join('; '),
+          },
+        ],
+      },
+    ];
+  },
   // Proxy pentru backend FastAPI (port 8000)
   async rewrites() {
     return [

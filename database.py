@@ -994,6 +994,147 @@ def clear_conversation_history(session_id: int = None, chat_id: str = None, user
             cursor.close()
             connection.close()
 
+# ==================== OPERAȚII PE TABELUL document_templates ====================
+
+def get_document_template(client_chat_id: int, filename: str) -> Optional[Dict[str, Any]]:
+    """Obține template-ul pentru un document"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        query = """
+            SELECT id, template_name, template_html, template_json, variables
+            FROM document_templates
+            WHERE id_client_chat = %s AND filename = %s
+        """
+        cursor.execute(query, (client_chat_id, filename))
+        result = cursor.fetchone()
+        
+        if result:
+            variables = json.loads(result['variables']) if result.get('variables') else []
+            return {
+                "id": result['id'],
+                "template_name": result.get('template_name', filename),
+                "template_html": result.get('template_html', ''),
+                "template_json": result.get('template_json'),
+                "variables": variables
+            }
+        return None
+    except Error as e:
+        print(f"❌ Eroare la citirea template: {e}")
+        return None
+    finally:
+        if connection and connection.is_connected():
+            cursor.close()
+            connection.close()
+
+def save_document_template(
+    client_chat_id: int,
+    filename: str,
+    template_name: str,
+    template_html: str,
+    variables: List[Dict]
+) -> bool:
+    """Salvează template-ul pentru un document"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        
+        variables_json = json.dumps(variables) if variables else '[]'
+        
+        # Verifică dacă există deja
+        check_query = "SELECT id FROM document_templates WHERE id_client_chat = %s AND filename = %s"
+        cursor.execute(check_query, (client_chat_id, filename))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update
+            query = """
+                UPDATE document_templates
+                SET template_name = %s, template_html = %s, variables = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """
+            cursor.execute(query, (template_name, template_html, variables_json, existing[0]))
+        else:
+            # Insert
+            query = """
+                INSERT INTO document_templates (id_client_chat, filename, template_name, template_html, variables)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+            cursor.execute(query, (client_chat_id, filename, template_name, template_html, variables_json))
+        
+        connection.commit()
+        return True
+    except Error as e:
+        print(f"❌ Eroare la salvarea template: {e}")
+        if connection:
+            connection.rollback()
+        return False
+    finally:
+        if connection and connection.is_connected():
+            cursor.close()
+            connection.close()
+
+def list_document_templates(client_chat_id: int) -> List[Dict[str, Any]]:
+    """Listează toate template-urile de documente pentru un tenant (client_chat_id)"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        query = """
+            SELECT id, filename, template_name, variables
+            FROM document_templates
+            WHERE id_client_chat = %s
+            ORDER BY template_name
+        """
+        cursor.execute(query, (client_chat_id,))
+        rows = cursor.fetchall()
+        result = []
+        for row in rows:
+            variables = json.loads(row['variables']) if row.get('variables') else []
+            result.append({
+                "id": row['id'],
+                "filename": row['filename'],
+                "template_name": row.get('template_name', row['filename']),
+                "variables": variables,
+            })
+        return result
+    except Error as e:
+        print(f"❌ Eroare la listarea template-urilor: {e}")
+        return []
+    finally:
+        if connection and connection.is_connected():
+            cursor.close()
+            connection.close()
+
+
+def get_document_template_content(client_chat_id: int, filename: str) -> Optional[str]:
+    """Obține conținutul original al documentului RAG pentru a-l folosi ca bază pentru template"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        
+        query = """
+            SELECT content FROM rag_file
+            WHERE id_client_chat = %s AND file = %s
+        """
+        cursor.execute(query, (client_chat_id, filename))
+        result = cursor.fetchone()
+        
+        if result and result.get('content'):
+            return result['content']
+        return None
+    except Error as e:
+        print(f"❌ Eroare la citirea conținutului documentului: {e}")
+        return None
+    finally:
+        if connection and connection.is_connected():
+            cursor.close()
+            connection.close()
+
 # ==================== OPERAȚII PE TABELUL Users ====================
 
 def get_user(user_id: int = None, email: str = None) -> Optional[Dict[str, Any]]:

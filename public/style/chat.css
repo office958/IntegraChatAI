@@ -441,15 +441,23 @@
   }
 
   .typing-indicator {
-      display: none;
-      padding: 16px 20px;
-      background: white;
-      border-radius: 20px;
-      border-bottom-left-radius: 5px;
-      border: 1px solid #e5e7eb;
-      max-width: 70px;
-      align-self: flex-start;
-      margin-left: 0;
+      display: inline-block;
+      padding: 0;
+      margin: 0;
+      font-size: 20px;
+      color: #3b82f6;
+      animation: typing-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes typing-pulse {
+      0%, 100% {
+          opacity: 0.3;
+          transform: scale(0.8);
+      }
+      50% {
+          opacity: 1;
+          transform: scale(1.2);
+      }
   }
 
   .typing-dots {

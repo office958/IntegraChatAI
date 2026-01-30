@@ -327,6 +327,96 @@ function generatePDFContent(messages: Array<{ role: string; content: string; tim
 }
 
 /**
+ * Extrage numele fișierului template din tag-ul [GENERATE_PDF: filename] din mesaj
+ */
+export function parseGeneratePDFTag(content: string): string | null {
+  if (!content) return null;
+  const match = content.match(/\[GENERATE_PDF:\s*([^\]]+)\]\s*$/m);
+  return match ? match[1].trim() : null;
+}
+
+/**
+ * Elimină tag-ul [GENERATE_PDF: ...] din conținutul mesajului pentru afișare
+ */
+export function stripGeneratePDFTag(content: string): string {
+  if (!content) return content;
+  return content.replace(/\s*\[GENERATE_PDF:\s*[^\]]+\]\s*$/gm, '').trim();
+}
+
+/**
+ * Obține istoricul conversației pentru a-l trimite la extract-document-data
+ */
+export async function getChatHistory(
+  chatId: string,
+  sessionId: string | null,
+  token?: string
+): Promise<Array<{ role: string; content: string }>> {
+  const headers: HeadersInit = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const url = sessionId
+    ? `${BACKEND_URL}/chat/${chatId}/history?session_id=${sessionId}`
+    : `${BACKEND_URL}/chat/${chatId}/history`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error('Failed to load chat history');
+  const data = await res.json();
+  const messages = data.messages || [];
+  return messages
+    .filter((m: { role: string }) => m.role !== 'system')
+    .map((m: { role: string; content: string }) => ({ role: m.role, content: m.content || '' }));
+}
+
+/**
+ * Extrage date din conversație pentru un template (backend LLM)
+ */
+export async function extractDocumentData(
+  chatId: string,
+  templateFilename: string,
+  conversation: Array<{ role: string; content: string }>,
+  token?: string
+): Promise<{ data: Record<string, string>; template_name?: string }> {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${BACKEND_URL}/chat/${chatId}/extract-document-data`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ conversation, template_filename: templateFilename }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || res.statusText);
+  }
+  const json = await res.json();
+  return { data: json.data || {}, template_name: json.template_name };
+}
+
+/**
+ * Generează documentul (DOCX/PDF) din template cu datele utilizatorului
+ */
+export async function generateDocumentFromTemplate(
+  chatId: string,
+  templateFilename: string,
+  userData: Record<string, string>,
+  token?: string
+): Promise<{ pdf_url?: string; docx_url?: string }> {
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${BACKEND_URL}/chat/${chatId}/generate-document`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ template_filename: templateFilename, user_data: userData }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || res.statusText);
+  }
+  const json = await res.json();
+  return {
+    pdf_url: json.pdf_url,
+    docx_url: json.docx_url,
+  };
+}
+
+/**
  * Downloads a blob as a file
  * @param blob - The blob to download
  * @param filename - The filename for the downloaded file

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { MessageType } from '@/types';
-import { extractPDFText, extractImageText } from '@/utils/pdfExtractor';
+import { extractPDFText, extractImageText, extractDocxText } from '@/utils/pdfExtractor';
 import { tryAutoFillFields } from '@/utils/autoFill';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -45,9 +45,9 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
             .filter((msg: any) => msg.role !== 'system') // Filtrează mesajele de tip 'system'
             .forEach((msg: any, index: number) => {
               // Procesează file_info dacă există
-              let files: Array<{ filename: string; type: 'pdf' | 'image'; url?: string; generated?: boolean }> | undefined = undefined;
+              let files: Array<{ filename: string; type: 'pdf' | 'image' | 'docx'; url?: string; generated?: boolean }> | undefined = undefined;
               
-              if (msg.file_info) {
+                  if (msg.file_info) {
                 try {
                   // Parsează file_info dacă este string
                   const fileInfo = typeof msg.file_info === 'string' 
@@ -57,11 +57,15 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
                   // Construiește array-ul de fișiere pentru mesaj
                   if (fileInfo && fileInfo.filename) {
                     const fileType = fileInfo.fileType || fileInfo.type || 
-                      (fileInfo.filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image');
+                      (fileInfo.filename.toLowerCase().endsWith('.pdf') 
+                        ? 'pdf' 
+                        : fileInfo.filename.toLowerCase().endsWith('.docx')
+                        ? 'docx'
+                        : 'image');
                     
                     files = [{
                       filename: fileInfo.filename,
-                      type: fileType === 'pdf' ? 'pdf' : 'image',
+                      type: fileType === 'pdf' ? 'pdf' : (fileType === 'docx' ? 'docx' : 'image'),
                       url: fileInfo.url || undefined,
                       generated: fileInfo.generated || false
                     }];
@@ -158,7 +162,11 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
         timestamp: new Date(),
         files: pdfFiles?.map((f) => ({
           filename: f.name,
-          type: f.type.startsWith('image/') ? 'image' : 'pdf',
+          type: f.type.startsWith('image/') 
+            ? 'image' 
+            : (f.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || f.name.toLowerCase().endsWith('.docx'))
+            ? 'docx'
+            : 'pdf',
         })),
       };
 
@@ -180,6 +188,9 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
                   const result = await extractImageText(file, true); // Activează corecția automată
                   // Returnează textul corectat dacă există, altfel textul original
                   return result.correctedText || result.text;
+                } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.toLowerCase().endsWith('.docx')) {
+                  console.log(`  → Folosește extractDocxText pentru ${file.name}`);
+                  return await extractDocxText(file);
                 } else {
                   console.log(`  → Folosește extractPDFText pentru ${file.name}`);
                   return await extractPDFText(file);
@@ -313,7 +324,11 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
           console.log(`📎 Construire files_info pentru ${pdfFiles.length} fișier(e) noi...`);
           pdfFiles.forEach((file) => {
             const filename = file.name;
-            const fileType = file.type.startsWith('image/') ? 'image' : 'pdf';
+            const fileType = file.type.startsWith('image/') 
+              ? 'image' 
+              : (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.toLowerCase().endsWith('.docx'))
+              ? 'docx'
+              : 'pdf';
             // Găsește textul extras pentru acest fișier
             const extractedText = extractedTexts.get(filename);
             
@@ -336,7 +351,11 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
             const alreadyIncluded = allFilesInfo.some(f => f.filename === filename);
             if (!alreadyIncluded) {
               // Determină tipul fișierului din extensie
-              const fileType = filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image';
+              const fileType = filename.toLowerCase().endsWith('.pdf') 
+                ? 'pdf' 
+                : filename.toLowerCase().endsWith('.docx')
+                ? 'docx'
+                : 'image';
               
               const fileInfo: any = {
                 filename: filename,
@@ -415,7 +434,7 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
 
 
         // Funcție pentru detectarea link-urilor către PDF-uri generate
-        const detectGeneratedFiles = (text: string): Array<{ filename: string; type: 'pdf' | 'image'; url: string; generated: boolean }> => {
+        const detectGeneratedFiles = (text: string): Array<{ filename: string; type: 'pdf' | 'image' | 'docx'; url: string; generated: boolean }> => {
           const pdfUrlPattern = /(?:https?:\/\/[^\s]+)?\/pdf_generated\/[^\s\)]+\.pdf/gi;
           const matches = text.match(pdfUrlPattern);
           
@@ -440,7 +459,7 @@ export function useChat(chatId: string | null, sessionId: string | null = null) 
         let pendingUpdate: number | null = null;
         let lastContent = '';
         let hasPendingContent = false;
-        let detectedFiles: Array<{ filename: string; type: 'pdf' | 'image'; url: string; generated: boolean }> = [];
+        let detectedFiles: Array<{ filename: string; type: 'pdf' | 'image' | 'docx'; url: string; generated: boolean }> = [];
         
         const scheduleUpdate = () => {
           // Dacă conținutul nu s-a schimbat, nu actualizăm

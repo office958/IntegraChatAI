@@ -5,7 +5,8 @@ from urllib.parse import unquote
 from database import (
     get_client_chat, create_client_chat, update_client_chat, list_all_client_chats,
     create_or_update_client_type,
-    add_rag_file, delete_rag_file
+    add_rag_file, delete_rag_file,
+    get_document_template, save_document_template, get_document_template_content
 )
 from rag_manager import get_tenant_rag_store
 from core.cache import get_cached_config, invalidate_config_cache
@@ -495,3 +496,69 @@ async def reprocess_rag(chat_id: str):
         "message": f"Re-procesat {len(rag_content)} din {len(rag_files)} fișiere și actualizat vector store"
     })
 
+@router.get("/tenant/{chat_id}/template/{filename}")
+async def get_template(chat_id: str, filename: str):
+    """Obține template-ul pentru un document"""
+    from urllib.parse import unquote
+    filename = unquote(filename)
+    
+    try:
+        client_chat_id = int(chat_id)
+    except ValueError:
+        db_config = get_client_chat(chat_id)
+        if not db_config:
+            return JSONResponse(status_code=404, content={"error": "Chat not found"})
+        client_chat_id = db_config.get("id")
+    
+    template = get_document_template(client_chat_id, filename)
+    if not template:
+        return JSONResponse(status_code=404, content={"error": "Template not found"})
+    
+    return JSONResponse(content=template)
+
+@router.put("/tenant/{chat_id}/template/{filename}")
+async def save_template(chat_id: str, filename: str, template_data: dict):
+    """Salvează template-ul pentru un document"""
+    from urllib.parse import unquote
+    filename = unquote(filename)
+    
+    try:
+        client_chat_id = int(chat_id)
+    except ValueError:
+        db_config = get_client_chat(chat_id)
+        if not db_config:
+            return JSONResponse(status_code=404, content={"error": "Chat not found"})
+        client_chat_id = db_config.get("id")
+    
+    success = save_document_template(
+        client_chat_id,
+        filename,
+        template_data.get("template_name", filename),
+        template_data.get("template_html", ""),
+        template_data.get("variables", [])
+    )
+    
+    if not success:
+        return JSONResponse(status_code=500, content={"error": "Error saving template"})
+    
+    return JSONResponse(content={"success": True, "message": "Template saved"})
+
+@router.get("/tenant/{chat_id}/rag/{filename}/content")
+async def get_rag_file_content(chat_id: str, filename: str):
+    """Obține conținutul unui fișier RAG"""
+    from urllib.parse import unquote
+    filename = unquote(filename)
+    
+    try:
+        client_chat_id = int(chat_id)
+    except ValueError:
+        db_config = get_client_chat(chat_id)
+        if not db_config:
+            return JSONResponse(status_code=404, content={"error": "Chat not found"})
+        client_chat_id = db_config.get("id")
+    
+    content = get_document_template_content(client_chat_id, filename)
+    if content is None:
+        return JSONResponse(status_code=404, content={"error": "File not found or has no content"})
+    
+    return JSONResponse(content={"content": content})

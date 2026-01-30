@@ -7,6 +7,14 @@ import PyPDF2
 from PIL import Image
 import pytesseract
 
+# Importă python-docx pentru procesarea fișierelor DOCX
+try:
+    from docx import Document
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+    Document = None
+
 # Importă OCR-ul nou cu PaddleOCR
 try:
     from ocr_processor.processor import process_image, process_pdf, PADDLEOCR_AVAILABLE, OPENCV_AVAILABLE
@@ -658,4 +666,99 @@ async def extract_image(
             print(f"❌❌ EROARE CRITICĂ: Nu s-a putut returna răspuns: {response_error}")
             print(f"❌❌ Eroare originală: {error_details}")
             raise
+
+@router.post("/extract-docx")
+async def extract_docx(
+    docx: UploadFile = File(...)
+):
+    """
+    Extrage textul dintr-un fișier DOCX.
+    
+    Args:
+        docx: Fișierul DOCX
+    """
+    if not DOCX_AVAILABLE:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "python-docx nu este instalat. Rulează: pip install python-docx"}
+        )
+    
+    # Verifică tipul de fișier
+    allowed_types = [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword"  # Pentru compatibilitate cu .doc (vechi)
+    ]
+    allowed_extensions = ['.docx', '.doc']
+    
+    is_valid_type = docx.content_type in allowed_types if docx.content_type else False
+    is_valid_extension = any(docx.filename.lower().endswith(ext) for ext in allowed_extensions) if docx.filename else False
+    
+    if not is_valid_type and not is_valid_extension:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Fișierul trebuie să fie DOCX"}
+        )
+    
+    try:
+        # Citește conținutul fișierului
+        docx_content = await docx.read()
+        
+        if not docx_content:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Fișierul DOCX este gol sau nu a putut fi citit."}
+            )
+        
+        # Deschide documentul DOCX
+        doc = Document(io.BytesIO(docx_content))
+        
+        # Extrage textul din toate paragrafele
+        text_parts = []
+        for paragraph in doc.paragraphs:
+            if paragraph.text and paragraph.text.strip():
+                text_parts.append(paragraph.text.strip())
+        
+        # Extrage textul din tabele (dacă există)
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = []
+                for cell in row.cells:
+                    if cell.text and cell.text.strip():
+                        row_text.append(cell.text.strip())
+                if row_text:
+                    text_parts.append(" | ".join(row_text))
+        
+        if not text_parts:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Nu s-a putut extrage text din DOCX. Documentul poate fi gol."}
+            )
+        
+        # Combină toate părțile textului
+        text = "\n".join(text_parts)
+        
+        # Limitează textul la 50000 caractere pentru a evita timeout-uri
+        final_text = text.strip()
+        is_truncated = False
+        if len(final_text) > 50000:
+            final_text = final_text[:50000] + "\n\n[... text trunchiat pentru a evita timeout-uri ...]"
+            is_truncated = True
+        
+        return JSONResponse(content={
+            "text": final_text,
+            "filename": docx.filename,
+            "type": "docx",
+            "method": "python-docx",
+            "truncated": is_truncated,
+            "original_length": len(text.strip())
+        })
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"❌ Eroare detaliată la procesarea DOCX: {error_details}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Eroare la procesarea DOCX: {str(e)}. Verifică consola serverului pentru detalii."}
+        )
 

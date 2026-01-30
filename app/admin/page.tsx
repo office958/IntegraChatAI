@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import styles from './Admin.module.css';
+import DocumentTemplateEditor from '@/components/DocumentTemplateEditor';
 
 interface InstitutionData {
   name: string;
@@ -72,6 +73,7 @@ export default function AdminPanel() {
     chat_subtitle: 'Asistentul tău inteligent pentru găsirea informațiilor',
     chat_color: '#3b82f6',
   });
+  const [editingTemplate, setEditingTemplate] = useState<{ chatId: string; filename: string } | null>(null);
 
   useEffect(() => {
     loadTenants();
@@ -555,17 +557,30 @@ export default function AdminPanel() {
                 </div>
                 {ragFiles.length > 0 ? (
                   <div className={styles.ragFilesList}>
-                    {ragFiles.map((filename) => (
-                      <div key={filename} className={styles.ragFileItem}>
-                        <span className={styles.ragFileName}>{filename}</span>
-                        <button
-                          className={styles.btnDelete}
-                          onClick={() => handleDeleteFile(filename)}
-                        >
-                          Șterge
-                        </button>
-                      </div>
-                    ))}
+                    {ragFiles.map((filename) => {
+                      const isDocx = filename.toLowerCase().endsWith('.docx') || filename.toLowerCase().endsWith('.doc');
+                      return (
+                        <div key={filename} className={styles.ragFileItem}>
+                          <span className={styles.ragFileName}>{filename}</span>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            {isDocx && (
+                              <button
+                                className={styles.btnEdit}
+                                onClick={() => setEditingTemplate({ chatId: selectedTenant.id, filename })}
+                              >
+                                Editează Template
+                              </button>
+                            )}
+                            <button
+                              className={styles.btnDelete}
+                              onClick={() => handleDeleteFile(filename)}
+                            >
+                              Șterge
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className={styles.info}>
@@ -733,6 +748,23 @@ export default function AdminPanel() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal pentru Editor Template */}
+      {editingTemplate && (
+        <DocumentTemplateEditor
+          chatId={editingTemplate.chatId}
+          filename={editingTemplate.filename}
+          onClose={() => setEditingTemplate(null)}
+          onSave={(template) => {
+            console.log('Template saved:', template);
+            setEditingTemplate(null);
+            // Reîncarcă lista de fișiere
+            if (selectedTenant) {
+              loadRagFiles(selectedTenant.id);
+            }
+          }}
+        />
       )}
     </div>
   );
